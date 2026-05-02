@@ -18,6 +18,7 @@ class TrainingArtifacts:
     history: list[dict[str, float]]
     best_metric: float
     device: str
+    total_time_seconds: float = 0.0
 
 
 def select_device(task: TaskType, requested: str | None = None) -> torch.device:
@@ -55,7 +56,9 @@ def train_classification_model(
     best_metric = float("-inf")
     best_state = copy.deepcopy(model.state_dict())
 
+    start_time = time.perf_counter()
     for epoch in range(config.epochs):
+        # ... training loop logic stays the same ...
         model.train()
         train_loss = 0.0
         train_correct = 0
@@ -115,11 +118,13 @@ def train_classification_model(
     checkpoint_path = Path(output_dir) / "best_model.pt"
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), checkpoint_path)
+    elapsed = time.perf_counter() - start_time
     return TrainingArtifacts(
         checkpoint_path=str(checkpoint_path),
         history=history,
         best_metric=best_metric,
         device=str(device),
+        total_time_seconds=elapsed,
     )
 
 
@@ -137,6 +142,7 @@ def train_detection_model(
     best_metric = float("inf")
     best_state = copy.deepcopy(model.state_dict())
 
+    start_time = time.perf_counter()
     for epoch in range(config.epochs):
         model.train()
         train_loss = 0.0
@@ -183,11 +189,13 @@ def train_detection_model(
     checkpoint_path = Path(output_dir) / "best_detection_model.pt"
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), checkpoint_path)
+    elapsed = time.perf_counter() - start_time
     return TrainingArtifacts(
         checkpoint_path=str(checkpoint_path),
         history=history,
         best_metric=best_metric,
         device=str(device),
+        total_time_seconds=elapsed,
     )
 
 

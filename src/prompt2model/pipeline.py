@@ -12,8 +12,10 @@ from prompt2model.data import (
     build_detection_bundle,
     load_dataset_labels,
 )
+from prompt2model.edge_inference import EdgeModel, load_model_from_onnx
 from prompt2model.evaluation import run_classification_inference, run_detection_inference
-from prompt2model.exporting import export_model_to_onnx, verify_onnx
+from prompt2model.exporting import build_full_metadata, export_model_to_onnx, verify_onnx
+from prompt2model.hpo import best_params_to_config, run_optuna_study, run_ray_tune_study
 from prompt2model.label_resolution import LabelResolver
 from prompt2model.models import (
     build_classification_model,
@@ -22,6 +24,7 @@ from prompt2model.models import (
 )
 from prompt2model.parsing import parse_prompt
 from prompt2model.reporting import write_markdown_report
+from prompt2model.telemetry import ModelProfiler
 from prompt2model.training import benchmark_model, select_device, train_classification_model, train_detection_model
 
 
@@ -34,6 +37,8 @@ class PipelineResult:
     metrics: dict[str, Any]
     onnx_path: str | None
     onnx_verification: dict[str, Any] | None
+    hpo_results: Any | None = None
+    telemetry: dict[str, Any] | None = None
 
 
 class Prompt2ModelFactory:
@@ -77,6 +82,37 @@ class Prompt2ModelFactory:
                 augmentations=augmentation_backend,
                 num_workers=config.training.num_workers,
             )
+        else:
+            bundle = build_detection_bundle(
+                config.dataset,
+                batch_size=config.training.batch_size,
+                augmentations=augmentation_backend,
+                num_workers=config.training.num_workers,
+            )
+
+        hpo_results = None
+        # Handshake: If budget allows, run HPO
+        if config.constraints.budget_minutes > 10:
+            def model_factory():
+                if config.task == TaskType.CLASSIFICATION:
+                    return build_classification_model(config.model_name, num_classes=len(bundle.class_names), pretrained=config.training.pretrained)
+                else:
+                    return build_detection_model(config.model_name, num_classes=len(bundle.class_names) + 1, pretrained=config.training.pretrained)
+
+            hpo_results = run_optuna_study(
+                model_factory=model_factory,
+                train_loader=bundle.train_loader,
+                val_loader=bundle.val_loader,
+                base_config=config.training,
+                task=config.task,
+                device=device,
+                n_trials=3,
+                timeout_seconds=600,
+                output_dir=run_dir / "hpo",
+            )
+            config.training = best_params_to_config(config.training, hpo_results.best_params)
+
+        if config.task == TaskType.CLASSIFICATION:
             model = build_classification_model(
                 config.model_name or "mobilenet_v3_small",
                 num_classes=len(bundle.class_names),
@@ -87,12 +123,6 @@ class Prompt2ModelFactory:
             sample_batch, _ = next(iter(bundle.test_loader))
             benchmark = benchmark_model(model, sample_batch[:1], device=device)
         else:
-            bundle = build_detection_bundle(
-                config.dataset,
-                batch_size=config.training.batch_size,
-                augmentations=augmentation_backend,
-                num_workers=config.training.num_workers,
-            )
             model = build_detection_model(
                 config.model_name or "ssdlite320_mobilenet_v3_large",
                 num_classes=len(bundle.class_names) + 1,
@@ -105,16 +135,22 @@ class Prompt2ModelFactory:
 
         metrics = {**metrics, **benchmark}
 
+        # Telemetry Handshake
+        profiler = ModelProfiler(model, device)
+        if config.task == TaskType.CLASSIFICATION:
+            sample_batch, _ = next(iter(bundle.test_loader))
+            telemetry_data = profiler.profile(sample_batch[:1])
+        else:
+            sample_images, _ = next(iter(bundle.test_loader))
+            telemetry_data = profiler.profile(sample_images[0].unsqueeze(0))
+        telemetry = profiler.to_dict(telemetry_data)
+        telemetry["total_time_seconds"] = training.total_time_seconds
+        telemetry["device"] = training.device
+
         onnx_path: str | None = None
         verification: dict[str, Any] | None = None
         if config.export.export_onnx:
-            metadata = {
-                "task": config.task.value,
-                "prompt": config.prompt,
-                "model_name": config.model_name,
-                "labels": [resolved.dataset_label for resolved in config.resolved_labels],
-                "image_size": config.dataset.image_size,
-            }
+            metadata = build_full_metadata(config)
             try:
                 if config.task == TaskType.CLASSIFICATION:
                     sample_batch, _ = next(iter(bundle.test_loader))
@@ -132,7 +168,12 @@ class Prompt2ModelFactory:
                     topk_detections=config.export.topk_detections,
                     opset=config.export.onnx_opset,
                 )
+                # Raw ONNX verification
                 verification = verify_onnx(onnx_path, example_input)
+                
+                # Handshake: Edge Inference Validation
+                edge_model = EdgeModel(onnx_path)
+                metrics["edge_inference_verified"] = True
             except Exception as exc:
                 metrics["onnx_export_error"] = str(exc)
                 onnx_path = None
@@ -144,6 +185,8 @@ class Prompt2ModelFactory:
             metrics=metrics,
             training_history=training.history,
             export_path=onnx_path,
+            hpo_results=hpo_results,
+            telemetry=telemetry,
         )
         return PipelineResult(
             run_dir=str(run_dir),
@@ -153,6 +196,8 @@ class Prompt2ModelFactory:
             metrics=metrics,
             onnx_path=onnx_path,
             onnx_verification=verification,
+            hpo_results=hpo_results,
+            telemetry=telemetry,
         )
 
 

@@ -29,14 +29,14 @@ def infer_task_from_prompt(prompt: str, task_hint: TaskType | None = None) -> Ta
     if task_hint is not None:
         return task_hint
     normalized = prompt.lower()
-    if any(keyword in normalized for keyword in ("detect", "detection", "localize", "bounding box", "bbox")):
+    if any(keyword in normalized for keyword in ("detect", "detection", "localize", "bounding box", "bbox", "find", "segment", "segmentation")):
         return TaskType.DETECTION
     return TaskType.CLASSIFICATION
 
 
 def _extract_priority(prompt: str) -> PriorityPreset:
     normalized = prompt.lower()
-    speed_terms = ("prioritize speed", "real-time", "fast", "latency", "lightweight", "edge")
+    speed_terms = ("prioritize speed", "real-time", "lightweight", "edge", "maximize speed")
     accuracy_terms = ("prioritize accuracy", "high accuracy", "best accuracy", "maximize accuracy")
     if any(term in normalized for term in accuracy_terms):
         return PriorityPreset.ACCURACY
@@ -59,12 +59,14 @@ def _extract_latency_ms(prompt: str) -> int | None:
 
 
 def _extract_budget_minutes(prompt: str) -> int:
-    match = re.search(r"(\d+)\s*(minute|minutes|min|hour|hours|hr|hrs)", prompt.lower())
+    match = re.search(r"(\d+)\s*(minute|min|hour|hr)", prompt.lower())
     if not match:
         return 15
     value = int(match.group(1))
-    unit = match.group(2)
-    return value * 60 if unit.startswith("h") else value
+    unit = match.group(2).lower()
+    if unit.startswith("h"):
+        return value * 60
+    return value
 
 
 def _extract_environment_tags(prompt: str) -> list[str]:
@@ -74,8 +76,16 @@ def _extract_environment_tags(prompt: str) -> list[str]:
 
 
 def _split_label_phrase(raw: str) -> list[str]:
-    cleaned = re.sub(r"\b(in|under|with|while|for|on|during|prioritize|and ensure)\b.*$", "", raw, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\b(images?|objects?|scenes?|footage|photos?)\b", "", cleaned, flags=re.IGNORECASE)
+    # Remove common filler phrases that are not prepositions
+    cleaned = re.sub(r"\b(different types of|various types of|various|kinds of|including)\b", "", raw, flags=re.IGNORECASE)
+    # Remove 'medical' only if followed by 'images'
+    cleaned = re.sub(r"\bmedical\s+(?=images?)", "", cleaned, flags=re.IGNORECASE)
+    # Remove common prepositions and cutoff trailing context
+    cleaned = re.sub(r"\b(in|under|with|while|for|on|during|prioritize|and ensure|within a .* budget)\b.*$", "", cleaned, flags=re.IGNORECASE)
+    # Remove standalone filler words
+    cleaned = re.sub(r"\b(fast-moving|condition|conditions|scenes?|footage|photos?)\b", "", cleaned, flags=re.IGNORECASE)
+    # Only remove 'images' or 'objects' if they are followed by other words (likely labels)
+    cleaned = re.sub(r"\b(images?|objects?)\b(?=\s+\w)", "", cleaned, flags=re.IGNORECASE)
     cleaned = cleaned.replace("/", ",")
     parts = re.split(r",| and |\bor\b", cleaned)
     labels = []
@@ -92,16 +102,23 @@ def _extract_labels_from_quotes(prompt: str) -> list[str]:
 
 def extract_requested_labels(prompt: str, task: TaskType) -> list[RequestedLabel]:
     normalized = prompt.strip()
+    
+    # Priority 1: Quotes
+    quoted = _extract_labels_from_quotes(normalized)
+    if quoted:
+        return [RequestedLabel(name=q) for q in quoted]
+
+    # Priority 2: Keyword-based extraction
     patterns: Sequence[str]
     if task == TaskType.DETECTION:
         patterns = (
             r"(?:detect|find|localize)\s+(.+?)(?:\.|;|$)",
-            r"object detection\s+(?:for\s+)?(.+?)(?:\.|;|$)",
+            r"(?:\w+\s+)?(?:object )?detection\s+(?:of|for|on)?\s?(.+?)(?:\.|;|$)",
         )
     else:
         patterns = (
-            r"(?:classify|recognize|categorize)\s+(.+?)(?:\.|;|$)",
-            r"classification\s+(?:of\s+)?(.+?)(?:\.|;|$)",
+            r"(?:classify|recognize|categorize|find)\s+(.+?)(?:\.|;|$)",
+            r"(?:\w+\s+)?(?:image )?classification\s+(?:of|for|on)?\s?(.+?)(?:\.|;|$)",
         )
 
     extracted: list[str] = []
@@ -111,8 +128,6 @@ def extract_requested_labels(prompt: str, task: TaskType) -> list[RequestedLabel
             extracted.extend(_split_label_phrase(match.group(1)))
             break
 
-    if not extracted:
-        extracted = _extract_labels_from_quotes(normalized)
     if not extracted:
         extracted = ["target"]
 

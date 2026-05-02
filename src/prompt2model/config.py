@@ -49,6 +49,7 @@ class ModelConstraints(BaseModel):
     target_latency_ms: int | None = None
     max_parameters_millions: float | None = None
     budget_minutes: int = 15
+    llm_temperature: float = 0.1
 
     @field_validator("speed_accuracy_tradeoff")
     @classmethod

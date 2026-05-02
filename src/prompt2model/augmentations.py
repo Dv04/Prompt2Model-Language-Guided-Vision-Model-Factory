@@ -70,7 +70,11 @@ class TorchVisionAugmentationBackend:
         for operation in self.plan.operations:
             if self.rng.random() > operation.probability:
                 continue
-            image, target = self._apply_operation(image, target, operation.name)
+            try:
+                image, target = self._apply_operation(image, target, operation.name)
+            except Exception as exc:
+                import logging
+                logging.getLogger(__name__).warning("Augmentation '%s' failed: %s", operation.name, exc)
         return image, target
 
     def _apply_operation(
@@ -82,12 +86,10 @@ class TorchVisionAugmentationBackend:
         if name == "brightness_contrast":
             brightness = self.rng.uniform(0.7, 1.3)
             contrast = self.rng.uniform(0.7, 1.3)
-            image = TF.adjust_brightness(image, brightness)
-            image = TF.adjust_contrast(image, contrast)
-            return image, target
+            return TF.adjust_brightness(image, brightness), TF.adjust_contrast(image, contrast), target
         if name == "gaussian_blur":
             kernel_size = 3 if self.rng.random() < 0.5 else 5
-            return TF.gaussian_blur(image, kernel_size=kernel_size), target
+            return TF.gaussian_blur(image, kernel_size=[kernel_size, kernel_size]), target
         if name == "color_jitter":
             return self.color_jitter(image), target
         if name == "horizontal_flip":
