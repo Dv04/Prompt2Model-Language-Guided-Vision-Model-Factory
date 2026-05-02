@@ -11,9 +11,62 @@ import torch
 from torch import nn
 
 from prompt2model.config import PipelineConfig, TaskType
+from prompt2model.data import IMAGENET_MEAN, IMAGENET_STD
 
-IMAGENET_MEAN = (0.485, 0.456, 0.406)
-IMAGENET_STD = (0.229, 0.224, 0.225)
+
+def build_metadata_props(
+    config: PipelineConfig,
+    class_names: list[str],
+    mean: tuple[float, float, float] = IMAGENET_MEAN,
+    std: tuple[float, float, float] = IMAGENET_STD,
+) -> dict[str, Any]:
+    """Build the complete metadata dictionary to embed in the ONNX file.
+
+    Args:
+        config: The fully resolved pipeline configuration (including resolved_labels).
+        class_names: Ordered list of class names as seen by the model
+            (index 0 → class_names[0], etc.).  For detection models trained with a
+            background class at index 0, pass the dataset category names only; the
+            background entry is handled transparently by the model and is NOT included
+            here so that consumers index directly with the predicted label integer.
+        mean: Per-channel mean used during training normalisation.
+            Defaults to ImageNet mean (0.485, 0.456, 0.406).
+        std: Per-channel std used during training normalisation.
+            Defaults to ImageNet std (0.229, 0.224, 0.225).
+
+    Returns:
+        A flat dict whose values are JSON-serialisable primitives or
+        JSON-serialisable containers.  ``inject_metadata`` will serialise
+        ``dict``/``list`` values automatically.
+
+    Keys injected
+    -------------
+    task              : str   — "classification" or "detection"
+    prompt            : str   — the original natural-language prompt
+    model_name        : str   — backbone identifier chosen by the pipeline
+    input_resolution  : list  — [height, width] in pixels (square images)
+    mean              : list  — [R, G, B] per-channel normalisation mean
+    std               : list  — [R, G, B] per-channel normalisation std
+    class_dict        : dict  — {"0": "cat", "1": "dog", …}  (str keys for JSON)
+    labels            : list  — flat list of dataset class names (legacy / convenience)
+    label_map         : dict  — {"requested_label": "dataset_label", …} from resolver
+    """
+    class_dict: dict[str, str] = {str(i): name for i, name in enumerate(class_names)}
+    label_map: dict[str, str] = {
+        resolved.requested_label: resolved.dataset_label
+        for resolved in config.resolved_labels
+    }
+    return {
+        "task": config.task.value,
+        "prompt": config.prompt,
+        "model_name": config.model_name or "",
+        "input_resolution": [config.dataset.image_size, config.dataset.image_size],
+        "mean": list(mean),
+        "std": list(std),
+        "class_dict": class_dict,
+        "labels": class_names,
+        "label_map": label_map,
+    }
 
 
 class DetectionExportWrapper(nn.Module):
@@ -103,6 +156,7 @@ def export_model_to_onnx(
         output_names=output_names,
         dynamic_axes={"images": {0: "batch"}},
         opset_version=opset,
+        dynamo=False,
     )
     inject_metadata(output_path, metadata)
     return output_path

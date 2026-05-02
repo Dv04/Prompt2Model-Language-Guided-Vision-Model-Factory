@@ -18,7 +18,15 @@ dependencies = [
   "scikit-learn>=1.6",
   "onnx>=1.17",
   "onnxruntime>=1.24",
+  "optuna>=3.6",
+  "ultralytics>=8.0",
+  "ray[tune]>=2.10",
+  "fvcore>=0.1.5",
+  "psutil>=6.1",
 ]
+
+[project.optional-dependencies]
+tune = ["ray[tune]>=2.10"]
 
 [project.scripts]
 prompt2model = "prompt2model.cli:main"

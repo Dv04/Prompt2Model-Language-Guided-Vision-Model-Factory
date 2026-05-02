@@ -209,3 +209,10 @@ __marimo__/
 # Local experiment downloads and scratch renders
 data/real_datasets/
 tmp/
+# YOLO/RT-DETR weight downloads (large files, downloaded on demand)
+/yolo11n.pt
+/yolo11s.pt
+/yolo11m.pt
+/rtdetr-l.pt
+/rtdetr-x.pt
+output/hpo/

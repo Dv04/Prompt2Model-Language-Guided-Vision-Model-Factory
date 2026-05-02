@@ -19,5 +19,12 @@ def test_classification_pipeline_runs_end_to_end(tmp_path: Path) -> None:
     assert result.metrics["accuracy"] >= 0.0
     assert result.onnx_path is not None
     assert result.onnx_verification is not None
+
+    # Legacy key still present
     assert "labels" in result.onnx_verification["metadata"]
+
+    # New rich metadata keys introduced by build_metadata_props
+    new_keys = {"class_dict", "mean", "std", "input_resolution", "label_map"}
+    missing = new_keys - result.onnx_verification["metadata"].keys()
+    assert not missing, f"ONNX metadata missing keys: {missing}"
 

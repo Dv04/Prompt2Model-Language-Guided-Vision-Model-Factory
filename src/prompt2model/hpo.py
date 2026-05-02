@@ -1,333 +1,248 @@
-"""Week 5 — Venkata: Optuna hyperparameter optimization integration.
+"""Optuna-based hyperparameter optimization for Prompt2Model.
 
-Week 6 will add optional Ray Tune with ASHA on top of this module.
+This module implements budgeted hyperparameter search over learning rate,
+weight decay, and number of epochs using Bayesian optimization (TPE sampler)
+with median pruning. Training is bounded by a wall-clock time budget derived
+from the ``budget_minutes`` field in :class:`~prompt2model.config.ModelConstraints`.
+
+Usage example::
+
+    from prompt2model.hpo import run_hpo
+
+    best_config, best_artifacts = run_hpo(
+        model_name="mobilenet_v3_small",
+        num_classes=3,
+        task=TaskType.CLASSIFICATION,
+        bundle=bundle,
+        budget_minutes=15,
+        output_dir=Path("output/hpo_run"),
+        device=device,
+    )
 """
-
 from __future__ import annotations
 
-import copy
 import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
-from torch import nn
 
-from prompt2model.config import PriorityPreset, TaskType, TrainingConfig
+from prompt2model.config import TaskType, TrainingConfig
+from prompt2model.models import build_classification_model, build_detection_model
 from prompt2model.training import (
     TrainingArtifacts,
-    select_device,
     train_classification_model,
     train_detection_model,
 )
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from prompt2model.data import ClassificationBundle, DetectionBundle
 
-_OPTUNA_AVAILABLE = False
-try:
-    import optuna
-
-    _OPTUNA_AVAILABLE = True
-except ImportError:
-    pass
-
-_RAY_TUNE_AVAILABLE = False
-try:
-    import ray
-    from ray import tune
-    from ray.tune.schedulers import ASHAScheduler
-
-    _RAY_TUNE_AVAILABLE = True
-except ImportError:
-    pass
+log = logging.getLogger(__name__)
 
 
 @dataclass
 class HPOResult:
-    """Outcome of a hyperparameter search."""
-
-    best_params: dict[str, Any]
-    best_metric: float
+    best_config: TrainingConfig
+    best_artifacts: TrainingArtifacts
     n_trials_completed: int
-    total_time_seconds: float
-    trial_history: list[dict[str, Any]]
+    best_trial_number: int
+    study_direction: str
+    elapsed_seconds: float
 
 
-@dataclass
-class SearchSpace:
-    """Defines the Optuna search space for a given backbone."""
-
-    lr_low: float = 1e-5
-    lr_high: float = 1e-2
-    weight_decay_low: float = 1e-6
-    weight_decay_high: float = 1e-2
-    batch_sizes: list[int] | None = None
-
-    @classmethod
-    def for_backbone(cls, model_name: str, priority: PriorityPreset) -> SearchSpace:
-        if priority == PriorityPreset.SPEED:
-            return cls(lr_low=5e-4, lr_high=5e-2, batch_sizes=[8, 16, 32])
-        if priority == PriorityPreset.ACCURACY:
-            return cls(lr_low=1e-5, lr_high=5e-3, batch_sizes=[4, 8, 16])
-        return cls(lr_low=1e-4, lr_high=1e-2, batch_sizes=[8, 16])
+def _optuna_available() -> bool:
+    try:
+        import optuna  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
 
-def _build_objective(
-    model_factory: Any,
-    train_loader: Any,
-    val_loader: Any,
-    base_config: TrainingConfig,
+def run_hpo(
+    model_name: str,
+    num_classes: int,
     task: TaskType,
-    device: torch.device,
-    search_space: SearchSpace,
+    bundle: ClassificationBundle | DetectionBundle,
+    budget_minutes: int,
     output_dir: Path,
-) -> Any:
-    """Build an Optuna objective function."""
-
-    def objective(trial: Any) -> float:
-        lr = trial.suggest_float("learning_rate", search_space.lr_low, search_space.lr_high, log=True)
-        wd = trial.suggest_float("weight_decay", search_space.weight_decay_low, search_space.weight_decay_high, log=True)
-        if search_space.batch_sizes:
-            bs = trial.suggest_categorical("batch_size", search_space.batch_sizes)
-        else:
-            bs = base_config.batch_size
-
-        trial_config = TrainingConfig(
-            batch_size=bs,
-            epochs=base_config.epochs,
-            learning_rate=lr,
-            weight_decay=wd,
-            num_workers=base_config.num_workers,
-            pretrained=base_config.pretrained,
-            device=base_config.device,
-            max_steps_per_epoch=base_config.max_steps_per_epoch,
-        )
-
-        model = copy.deepcopy(model_factory())
-        trial_dir = output_dir / f"trial_{trial.number}"
-
-        if task == TaskType.CLASSIFICATION:
-            result = train_classification_model(model, train_loader, val_loader, trial_config, trial_dir, device)
-            return result.best_metric  # higher is better (accuracy)
-        else:
-            result = train_detection_model(model, train_loader, val_loader, trial_config, trial_dir, device)
-            return -result.best_metric  # lower val_loss is better, negate for maximize
-
-    return objective
-
-
-def run_optuna_study(
-    model_factory: Any,
-    train_loader: Any,
-    val_loader: Any,
-    base_config: TrainingConfig,
-    task: TaskType,
     device: torch.device,
-    search_space: SearchSpace | None = None,
-    n_trials: int = 5,
-    timeout_seconds: int | None = None,
-    output_dir: str | Path = "output/hpo",
+    n_trials: int = 15,
+    pretrained: bool = False,
 ) -> HPOResult:
-    """Run Optuna hyperparameter search.
+    """Run budgeted hyperparameter optimization using Optuna.
+
+    Searches over ``learning_rate``, ``weight_decay``, and ``epochs`` using
+    the TPE sampler with median pruning. The search terminates when either
+    ``n_trials`` have completed or ``budget_minutes`` wall-clock time has
+    elapsed, whichever comes first.
 
     Args:
-        model_factory: Callable that returns a fresh model instance.
-        train_loader: Training DataLoader.
-        val_loader: Validation DataLoader.
-        base_config: Base training configuration (epochs, workers, etc.).
-        task: Classification or detection.
-        device: Torch device.
-        search_space: Search space definition (auto-generated if None).
-        n_trials: Maximum number of trials.
-        timeout_seconds: Hard time budget in seconds.
-        output_dir: Directory for trial artifacts.
+        model_name: Name of the backbone to optimize (must be a classification
+            or torchvision detection model, not a YOLO model).
+        num_classes: Number of output classes.
+        task: ``TaskType.CLASSIFICATION`` or ``TaskType.DETECTION``.
+        bundle: Pre-built data bundle from ``build_classification_bundle()``
+            or ``build_detection_bundle()``.
+        budget_minutes: Maximum wall-clock time budget. Passed from
+            ``ModelConstraints.budget_minutes``.
+        output_dir: Directory where trial checkpoints are saved.
+        device: Torch device to use for training.
+        n_trials: Maximum number of Optuna trials (may terminate earlier due
+            to time budget).
+        pretrained: Whether to start from pretrained ImageNet weights.
 
     Returns:
-        HPOResult with the best hyperparameters and trial history.
+        :class:`HPOResult` with the best config, best training artifacts, and
+        study statistics.
     """
-    if not _OPTUNA_AVAILABLE:
-        raise ImportError(
-            "Optuna is required for HPO. Install with: pip install optuna"
+    if not _optuna_available():
+        log.warning(
+            "optuna is not installed. Falling back to default TrainingConfig. "
+            "Install with: pip install optuna>=3.6"
         )
+        return _fallback_hpo(model_name, num_classes, task, bundle, output_dir, device, pretrained)
 
-    if search_space is None:
-        search_space = SearchSpace()
-
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    direction = "maximize" if task == TaskType.CLASSIFICATION else "maximize"
-    study = optuna.create_study(direction=direction, sampler=optuna.samplers.TPESampler(seed=42))
-
-    objective = _build_objective(
-        model_factory=model_factory,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        base_config=base_config,
-        task=task,
-        device=device,
-        search_space=search_space,
-        output_dir=out,
-    )
-
-    start = time.perf_counter()
+    import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
-    study.optimize(objective, n_trials=n_trials, timeout=timeout_seconds)
-    elapsed = time.perf_counter() - start
 
-    trial_history = []
-    for trial in study.trials:
-        trial_history.append({
-            "number": trial.number,
-            "params": trial.params,
-            "value": trial.value,
-            "state": str(trial.state),
-        })
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    best = study.best_trial
-    logger.info("HPO complete: %d trials in %.1fs, best value=%.4f", len(study.trials), elapsed, best.value)
+    start_time = time.time()
+    budget_seconds = budget_minutes * 60
+    direction = "maximize" if task == TaskType.CLASSIFICATION else "minimize"
 
-    return HPOResult(
-        best_params=best.params,
-        best_metric=best.value,
-        n_trials_completed=len(study.trials),
-        total_time_seconds=elapsed,
-        trial_history=trial_history,
-    )
+    best_config: TrainingConfig | None = None
+    best_artifacts: TrainingArtifacts | None = None
+    best_trial_number: int = 0
 
+    def objective(trial: optuna.Trial) -> float:
+        nonlocal best_config, best_artifacts, best_trial_number
 
-def best_params_to_config(base: TrainingConfig, best_params: dict[str, Any]) -> TrainingConfig:
-    """Merge HPO best parameters back into a TrainingConfig."""
-    return TrainingConfig(
-        batch_size=best_params.get("batch_size", base.batch_size),
-        epochs=base.epochs,
-        learning_rate=best_params.get("learning_rate", base.learning_rate),
-        weight_decay=best_params.get("weight_decay", base.weight_decay),
-        num_workers=base.num_workers,
-        pretrained=base.pretrained,
-        device=base.device,
-        max_steps_per_epoch=base.max_steps_per_epoch,
-    )
+        # Enforce wall-clock time budget
+        if time.time() - start_time >= budget_seconds:
+            raise optuna.exceptions.OptunaError("time budget exhausted")
 
+        # Define search space
+        lr = trial.suggest_float("learning_rate", 1e-4, 5e-3, log=True)
+        wd = trial.suggest_float("weight_decay", 1e-5, 1e-3, log=True)
+        epochs = trial.suggest_int("epochs", 2, 8)
 
-def run_ray_tune_study(
-    model_factory: Any,
-    train_loader: Any,
-    val_loader: Any,
-    base_config: TrainingConfig,
-    task: TaskType,
-    device: torch.device,
-    search_space: SearchSpace | None = None,
-    n_trials: int = 5,
-    timeout_seconds: int | None = None,
-    output_dir: str | Path = "output/ray_hpo",
-) -> HPOResult:
-    """Run Ray Tune with ASHA scheduler and Optuna search backend.
+        config = TrainingConfig(
+            learning_rate=lr,
+            weight_decay=wd,
+            epochs=epochs,
+            batch_size=16,
+            pretrained=pretrained,
+            max_steps_per_epoch=None,
+        )
 
-    This is an OPTIONAL integration. Falls back to pure Optuna if Ray is unavailable.
+        trial_dir = output_dir / f"trial_{trial.number}"
 
-    Returns:
-        HPOResult with the best hyperparameters and trial history.
-    """
-    if not _RAY_TUNE_AVAILABLE:
-        logger.info("Ray Tune not available, falling back to pure Optuna")
-        return run_optuna_study(
-            model_factory=model_factory,
-            train_loader=train_loader,
-            val_loader=val_loader,
-            base_config=base_config,
-            task=task,
-            device=device,
-            search_space=search_space,
+        try:
+            if task == TaskType.CLASSIFICATION:
+                model = build_classification_model(model_name, num_classes, pretrained)
+                artifacts = train_classification_model(
+                    model, bundle.train_loader, bundle.val_loader,
+                    config, trial_dir, device, trial=trial,
+                )
+                metric = artifacts.best_metric  # val accuracy (maximize)
+            else:
+                model = build_detection_model(model_name, num_classes, pretrained)
+                artifacts = train_detection_model(
+                    model, bundle.train_loader, bundle.val_loader,
+                    config, trial_dir, device, trial=trial,
+                )
+                metric = artifacts.best_metric  # val loss (minimize)
+
+        except optuna.exceptions.TrialPruned:
+            raise
+        except Exception as exc:
+            log.warning("Trial %d failed: %s", trial.number, exc)
+            raise optuna.exceptions.TrialPruned() from exc
+
+        # Track best result
+        is_better = (
+            (task == TaskType.CLASSIFICATION and (best_artifacts is None or metric > best_artifacts.best_metric))
+            or (task == TaskType.DETECTION and (best_artifacts is None or metric < best_artifacts.best_metric))
+        )
+        if is_better:
+            best_config = config
+            best_artifacts = artifacts
+            best_trial_number = trial.number
+
+        return metric
+
+    sampler = optuna.samplers.TPESampler(seed=42)
+    pruner = optuna.pruners.MedianPruner(n_startup_trials=2, n_warmup_steps=1)
+    study = optuna.create_study(direction=direction, sampler=sampler, pruner=pruner)
+
+    try:
+        study.optimize(
+            objective,
             n_trials=n_trials,
-            timeout_seconds=timeout_seconds,
-            output_dir=output_dir,
+            timeout=budget_seconds,
+            catch=(Exception,),
+            show_progress_bar=False,
         )
+    except Exception as exc:
+        log.warning("HPO study ended early: %s", exc)
 
-    if search_space is None:
-        search_space = SearchSpace()
-
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    from ray.tune.search.optuna import OptunaSearch
-
-    optuna_search = OptunaSearch(
-        metric="metric",
-        mode="max",
+    elapsed = time.time() - start_time
+    n_completed = len([t for t in study.trials if t.state.name == "COMPLETE"])
+    log.info(
+        "HPO finished: %d trials completed in %.1fs (budget=%dm)",
+        n_completed, elapsed, budget_minutes,
     )
 
-    scheduler = ASHAScheduler(
-        max_t=base_config.epochs,
-        grace_period=1,
-        reduction_factor=2,
-    )
-
-    def trainable(config: dict[str, Any]) -> None:
-        trial_config = TrainingConfig(
-            batch_size=config.get("batch_size", base_config.batch_size),
-            epochs=base_config.epochs,
-            learning_rate=config["learning_rate"],
-            weight_decay=config["weight_decay"],
-            num_workers=base_config.num_workers,
-            pretrained=base_config.pretrained,
-            device=base_config.device,
-            max_steps_per_epoch=base_config.max_steps_per_epoch,
-        )
-        model = copy.deepcopy(model_factory())
-        if task == TaskType.CLASSIFICATION:
-            result = train_classification_model(
-                model, train_loader, val_loader, trial_config, out / "ray_trial", device
-            )
-            tune.report(metric=result.best_metric)
-        else:
-            result = train_detection_model(
-                model, train_loader, val_loader, trial_config, out / "ray_trial", device
-            )
-            tune.report(metric=-result.best_metric)
-
-    param_space = {
-        "learning_rate": tune.loguniform(search_space.lr_low, search_space.lr_high),
-        "weight_decay": tune.loguniform(search_space.weight_decay_low, search_space.weight_decay_high),
-    }
-    if search_space.batch_sizes:
-        param_space["batch_size"] = tune.choice(search_space.batch_sizes)
-
-    start = time.perf_counter()
-
-    if not ray.is_initialized():
-        ray.init(ignore_reinit_error=True, log_to_driver=False)
-
-    analysis = tune.run(
-        trainable,
-        config=param_space,
-        num_samples=n_trials,
-        search_alg=optuna_search,
-        scheduler=scheduler,
-        time_budget_s=timeout_seconds,
-        verbose=0,
-        local_dir=str(out / "ray_results"),
-    )
-    elapsed = time.perf_counter() - start
-
-    best_config = analysis.best_config
-    best_result = analysis.best_result
-
-    trial_history = []
-    for trial in analysis.trials:
-        trial_history.append({
-            "number": trial.trial_id,
-            "params": trial.config,
-            "value": trial.last_result.get("metric"),
-            "state": str(trial.status),
-        })
+    # If no trial succeeded, fall back to defaults
+    if best_config is None or best_artifacts is None:
+        log.warning("No HPO trial succeeded. Using default TrainingConfig.")
+        return _fallback_hpo(model_name, num_classes, task, bundle, output_dir, device, pretrained)
 
     return HPOResult(
-        best_params=best_config,
-        best_metric=best_result.get("metric", 0.0),
-        n_trials_completed=len(analysis.trials),
-        total_time_seconds=elapsed,
-        trial_history=trial_history,
+        best_config=best_config,
+        best_artifacts=best_artifacts,
+        n_trials_completed=n_completed,
+        best_trial_number=best_trial_number,
+        study_direction=direction,
+        elapsed_seconds=elapsed,
+    )
+
+
+def _fallback_hpo(
+    model_name: str,
+    num_classes: int,
+    task: TaskType,
+    bundle: Any,
+    output_dir: Path,
+    device: torch.device,
+    pretrained: bool,
+) -> HPOResult:
+    """Run a single training pass with default config when Optuna is unavailable."""
+    start = time.time()
+    config = TrainingConfig(pretrained=pretrained)
+    fallback_dir = output_dir / "fallback"
+
+    if task == TaskType.CLASSIFICATION:
+        model = build_classification_model(model_name, num_classes, pretrained)
+        artifacts = train_classification_model(
+            model, bundle.train_loader, bundle.val_loader, config, fallback_dir, device
+        )
+    else:
+        model = build_detection_model(model_name, num_classes, pretrained)
+        artifacts = train_detection_model(
+            model, bundle.train_loader, bundle.val_loader, config, fallback_dir, device
+        )
+
+    return HPOResult(
+        best_config=config,
+        best_artifacts=artifacts,
+        n_trials_completed=1,
+        best_trial_number=0,
+        study_direction="maximize" if task == TaskType.CLASSIFICATION else "minimize",
+        elapsed_seconds=time.time() - start,
     )

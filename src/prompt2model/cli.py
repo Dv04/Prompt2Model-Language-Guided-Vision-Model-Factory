@@ -21,6 +21,7 @@ def _add_shared_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--max-steps-per-epoch", type=int, default=10)
     parser.add_argument("--device")
+    parser.add_argument("--enable-hpo", action="store_true", help="Enable Optuna hyperparameter optimization")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -54,12 +55,16 @@ def _run_pipeline(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
     )
     task_hint = TaskType(args.task) if args.task else None
+    
+    enable_hpo = getattr(args, "enable_hpo", False)
+    
     result = run_from_prompt(
         prompt=args.prompt,
         dataset=dataset,
         output_dir=args.output_dir,
         task_hint=task_hint,
         training_overrides=training,
+        enable_hpo=enable_hpo,
     )
     return {
         "run_dir": result.run_dir,

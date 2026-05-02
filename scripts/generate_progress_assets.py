@@ -12,6 +12,9 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from prompt2model.augmentations import TorchVisionAugmentationBackend, build_augmentation_plan
 from prompt2model.config import DatasetConfig, DatasetFormat, RequestedLabel, TaskType
 from prompt2model.evaluation import run_classification_inference
@@ -522,7 +525,11 @@ def build_results_figure(metrics: dict[str, object]) -> None:
 
     for idx, example in enumerate(examples[:4]):
         axis = fig.add_subplot(grid[idx // 2, idx % 2])
-        axis.imshow(np.asarray(Image.open(example["image_path"]).convert("RGB")))
+        # Resolve path: try absolute first, then relative to REPO_ROOT
+        img_path = Path(example["image_path"])
+        if not img_path.is_absolute() or not img_path.exists():
+            img_path = REPO_ROOT / example["image_path"]
+        axis.imshow(np.asarray(Image.open(img_path).convert("RGB")))
         axis.set_xticks([])
         axis.set_yticks([])
         axis.set_title(

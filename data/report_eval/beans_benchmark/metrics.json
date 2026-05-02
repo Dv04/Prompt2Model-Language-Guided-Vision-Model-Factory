@@ -20,25 +20,25 @@
   "low_light_gain_pp": 17.96875,
   "examples": [
     {
-      "image_path": "/Users/apple/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_006.png",
+      "image_path": "/Users/aneeshthatiparti/Documents/GitHub/DLVL/Project/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_006.png",
       "target": "angular_leaf_spot",
       "baseline": "bean_rust",
       "guided": "angular_leaf_spot"
     },
     {
-      "image_path": "/Users/apple/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_033.png",
+      "image_path": "/Users/aneeshthatiparti/Documents/GitHub/DLVL/Project/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_033.png",
       "target": "angular_leaf_spot",
       "baseline": "bean_rust",
       "guided": "angular_leaf_spot"
     },
     {
-      "image_path": "/Users/apple/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_034.png",
+      "image_path": "/Users/aneeshthatiparti/Documents/GitHub/DLVL/Project/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_034.png",
       "target": "angular_leaf_spot",
       "baseline": "healthy",
       "guided": "angular_leaf_spot"
     },
     {
-      "image_path": "/Users/apple/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_045.png",
+      "image_path": "/Users/aneeshthatiparti/Documents/GitHub/DLVL/Project/Prompt2Model-Language-Guided-Vision-Model-Factory/data/report_eval/beans_benchmark/examples/beans_045.png",
       "target": "bean_rust",
       "baseline": "angular_leaf_spot",
       "guided": "bean_rust"

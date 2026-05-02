@@ -143,9 +143,11 @@ def _save_examples(dataset: BeansDataset, baseline_preds: list[dict[str, int]], 
         image = dataset.display_image(index)
         filename = f"beans_{index:03d}.png"
         image.save(EXAMPLES_DIR / filename)
+        # Store path relative to REPO_ROOT so metrics.json is portable across machines
+        rel_path = (EXAMPLES_DIR / filename).relative_to(REPO_ROOT)
         examples.append(
             {
-                "image_path": str(EXAMPLES_DIR / filename),
+                "image_path": str(rel_path),
                 "target": dataset.class_names[baseline["target"]],
                 "baseline": dataset.class_names[baseline["prediction"]],
                 "guided": dataset.class_names[guided["prediction"]],
