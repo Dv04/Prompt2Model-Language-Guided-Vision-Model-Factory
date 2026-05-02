@@ -12,6 +12,9 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
 from prompt2model.augmentations import TorchVisionAugmentationBackend, build_augmentation_plan
 from prompt2model.config import DatasetConfig, DatasetFormat, RequestedLabel, TaskType
 from prompt2model.evaluation import run_classification_inference

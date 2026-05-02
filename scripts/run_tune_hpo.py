@@ -8,8 +8,12 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 
-# Add src to path for local development
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import os
+
+# Add src to path for local development and for Ray workers
+src_path = str(Path(__file__).resolve().parents[1] / "src")
+sys.path.insert(0, src_path)
+os.environ["PYTHONPATH"] = src_path + (f":{os.environ['PYTHONPATH']}" if "PYTHONPATH" in os.environ else "")
 
 from prompt2model.config import DatasetConfig, DatasetFormat, PipelineConfig, RequestedLabel, TaskType
 from prompt2model.tuning import HAS_RAY, export_best_trial, run_hpo
@@ -22,13 +26,19 @@ from ray import tune
 
 
 def main():
+    # Provide the src path to Ray workers explicitly
+    src_path = str(Path(__file__).resolve().parents[1] / "src")
+    import ray
+    ray.init(runtime_env={"env_vars": {"PYTHONPATH": src_path}}, ignore_reinit_error=True)
+
     # 1. Setup Beans Dataset
     dataset = load_dataset("beans")
     class_names = list(dataset["train"].features["labels"].names)
     num_classes = len(class_names)
 
     # Simplified loader construction for demo
-    from prompt2model.data import BeansDataset  # Assuming it's in scripts/run_beans_benchmark.py or similar
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from run_beans_real_benchmark import BeansDataset
     # For the sake of this demo script being standalone, we'll use a generic approach if possible
     # but since BeansDataset is specifically defined in Venkata's scripts, we'll mock a simple one
     

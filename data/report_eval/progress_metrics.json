@@ -49,14 +49,18 @@
   },
   "models": {
     "classification": {
-      "latency_ms": 8.543349988758564,
-      "fps": 117.05010345073201,
+      "latency_ms": 84.04088319512084,
+      "fps": 11.898970619790642,
+      "flops": 11627008.0,
+      "gflops": 0.011627008,
       "parameter_count": 1520931.0,
       "parameter_count_millions": 1.520931
     },
     "detection": {
-      "latency_ms": 23.90680001117289,
-      "fps": 41.829102997166,
+      "latency_ms": 118.66775000235066,
+      "fps": 8.426889361095927,
+      "flops": 428542144.0,
+      "gflops": 0.428542144,
       "parameter_count": 2220380.0,
       "parameter_count_millions": 2.22038
     },
