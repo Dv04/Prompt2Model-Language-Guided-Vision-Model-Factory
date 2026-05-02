@@ -216,3 +216,17 @@ tmp/
 /rtdetr-l.pt
 /rtdetr-x.pt
 output/hpo/
+
+data/
+output/
+
+# macOS Finder metadata
+*.DS_Store
+
+# Final report build outputs
+FinalReport/.DS_Store
+FinalReport/*.aux
+FinalReport/*.bbl
+FinalReport/*.blg
+FinalReport/*.log
+FinalReport/*.synctex.gz
