@@ -1,85 +1,178 @@
 #!/usr/bin/env python3
-"""run_final_demo.py — A stylized demonstration script for video presentation."""
+"""run_final_demo.py: end-to-end Prompt2Model demo with REAL outputs.
 
+Earlier versions of this script printed pre-baked numbers and bounding
+boxes regardless of the prompt. This rewrite drives the actual
+pipeline: parse the prompt, select a cached real dataset that matches
+the parsed labels, train a small classifier or detector, export ONNX,
+and report the metrics that the harness actually produced.
+
+If the requested labels are not present in any cached dataset, the
+script clearly says so and substitutes the closest available dataset
+rather than fabricating a result. Every printed number is read from
+the pipeline result object, not hard-coded.
+"""
+from __future__ import annotations
+
+import argparse
+import json
 import sys
 import time
-import random
 from pathlib import Path
 
-# ANSI Colors
-BLUE = "\033[94m"
-GREEN = "\033[92m"
-YELLOW = "\033[93m"
-RED = "\033[91m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC = REPO_ROOT / "src"
+sys.path.insert(0, str(SRC))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-def typing_print(text, speed=0.03):
-    for char in text:
-        sys.stdout.write(char)
-        sys.stdout.flush()
-        time.sleep(speed)
-    print()
+from prompt2model.config import DatasetConfig, DatasetFormat, TaskType, TrainingConfig
+from prompt2model.parsing import parse_prompt
+from prompt2model.pipeline import run_from_prompt
+from dataset_registry import select_dataset
 
-def header(text):
-    print("\n" + "=" * 60)
+BLUE, GREEN, YELLOW, RED, BOLD, RESET = (
+    "\033[94m", "\033[92m", "\033[93m", "\033[91m", "\033[1m", "\033[0m"
+)
+
+
+def header(text: str) -> None:
+    print("\n" + "=" * 64)
     print(f"  {BOLD}{BLUE}{text}{RESET}")
-    print("=" * 60)
-    time.sleep(0.5)
+    print("=" * 64)
 
-def step(text):
-    print(f"\n{BOLD}{YELLOW}→ {text}{RESET}")
-    time.sleep(0.8)
 
-def success(text):
-    print(f"{BOLD}{GREEN}✓ {text}{RESET}")
-    time.sleep(0.3)
+def step(text: str) -> None:
+    print(f"\n{BOLD}{YELLOW}> {text}{RESET}")
 
-def main():
-    header("PROMPT2MODEL: LANGUAGE-GUIDED VISION FACTORY")
-    
-    typing_print(f"{BOLD}User Prompt:{RESET} 'Build a lightweight face mask detector for low-light subway surveillance.'", 0.05)
-    
-    step("Parsing Prompt & Planning Data Pipeline...")
-    time.sleep(1.5)
-    success("Task identified: OBJECT DETECTION")
-    success("Recommended Backbone: SSDLITE320_MOBILENET_V3_LARGE")
-    success("Augmentation Strategy: LOW_LIGHT, MOTION_BLUR")
 
-    step("Resolving Dataset Labels...")
-    typing_print("Mapping ['mask', 'no-mask'] to internal labels...", 0.02)
-    success("Labels resolved with 98.4% confidence.")
+def ok(text: str) -> None:
+    print(f"{BOLD}{GREEN}  [OK]{RESET} {text}")
 
-    step("Starting Ray Tune HPO (Hyperparameter Optimization)...")
-    print(f"{BLUE}[Trial 1]{RESET} lr=1e-3, batch=16 | Accuracy: 0.92")
-    time.sleep(1)
-    print(f"{BLUE}[Trial 2]{RESET} lr=5e-4, batch=32 | Accuracy: 0.95 {BOLD}{GREEN}(Winner){RESET}")
-    time.sleep(0.5)
-    success("Best model checkpointed.")
 
-    step("Exporting to Metadata-Embedded ONNX...")
-    typing_print("Injecting Task, LabelMap, Mean/Std, and InputResolution into model.onnx...", 0.01)
-    success("ONNX Export Complete (data/output/model.onnx)")
+def warn(text: str) -> None:
+    print(f"{BOLD}{RED}  [warn]{RESET} {text}")
 
-    header("AUTONOMOUS EDGE INFERENCE DEMO")
-    
-    step("Executing edge_infer.py (No external config required)")
-    print(f"{BOLD}{GREEN}Loading model.onnx...{RESET}")
-    time.sleep(0.5)
-    print(f"✓ Task: detection")
-    print(f"✓ Classes: ['mask', 'no-mask']")
-    print(f"✓ Target Resolution: 320x320")
-    
-    step("Running Inference on sample_image.jpg")
-    print(f"{BOLD}Latency: 5.42 ms | FPS: 184.5{RESET}")
-    
-    print(f"\n{BOLD}DETECTION RESULTS:{RESET}")
-    print(f"1. mask     | Score: 0.98 | Box: (142, 55, 201, 110)")
-    print(f"2. no-mask  | Score: 0.92 | Box: (310, 42, 388, 115)")
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--prompt",
+        default=(
+            "Classify cats, dogs, and ships in low light scenes "
+            "and prioritize speed for an edge device."
+        ),
+    )
+    parser.add_argument("--output-dir", default="output/final_demo")
+    parser.add_argument("--epochs", type=int, default=2)
+    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--max-steps-per-epoch", type=int, default=20)
+    parser.add_argument("--image-size", type=int, default=96)
+    args = parser.parse_args()
+
+    header("PROMPT2MODEL: LANGUAGE-GUIDED VISION FACTORY (real run)")
+    print(f"{BOLD}Prompt:{RESET} {args.prompt}")
+
+    step("Parsing prompt into the typed intermediate representation")
+    placeholder_root = REPO_ROOT / "data/dummy"
+    placeholder_root.mkdir(parents=True, exist_ok=True)
+    placeholder_dataset = DatasetConfig(
+        root=str(placeholder_root),
+        format=DatasetFormat.IMAGEFOLDER,
+        image_size=args.image_size,
+    )
+    parsed = parse_prompt(args.prompt, placeholder_dataset)
+    label_names = [label.name for label in parsed.labels]
+    ok(f"task = {parsed.task.value}")
+    ok(f"requested labels = {label_names}")
+    ok(f"priority = {parsed.constraints.priority.value}")
+    if parsed.data_context.environment_tags:
+        tags = sorted(parsed.data_context.environment_tags)
+        ok(f"environment tags = {tags}")
+    else:
+        ok("environment tags = (none)")
+
+    step("Selecting a cached real dataset that matches the parsed labels")
+    workdir = REPO_ROOT / "output" / "demo_datasets"
+    record = select_dataset(label_names, REPO_ROOT, workdir)
+    if record.substituted:
+        warn(record.notes)
+    else:
+        ok(record.notes)
+    ok(f"dataset root = {record.root}")
+    ok(f"dataset classes = {record.classes}")
+
+    step("Running the real Prompt2Model pipeline (parse > train > eval > ONNX)")
+    if parsed.task == TaskType.DETECTION:
+        warn(
+            "The parsed task is detection but the cached datasets are "
+            "classification only. Routing the demo through the "
+            "classification path so the report numbers are real; the "
+            "detection path is exercised by the smoke pipeline."
+        )
+    dataset = DatasetConfig(
+        root=str(record.root),
+        format=DatasetFormat.IMAGEFOLDER,
+        image_size=args.image_size,
+    )
+    training = TrainingConfig(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        max_steps_per_epoch=args.max_steps_per_epoch,
+        device=None,
+    )
+    started = time.perf_counter()
+    result = run_from_prompt(
+        prompt=args.prompt,
+        dataset=dataset,
+        output_dir=args.output_dir,
+        task_hint=TaskType.CLASSIFICATION,
+        training_overrides=training,
+    )
+    elapsed = time.perf_counter() - started
+
+    step("Real pipeline outputs")
+    ok(f"run_dir = {result.run_dir}")
+    ok(f"report  = {result.report_path}")
+    ok(f"onnx    = {result.onnx_path}")
+    ok(f"wall-clock = {elapsed:.1f} s on this host")
+    metrics = result.metrics or {}
+    interesting = {
+        key: metrics[key]
+        for key in (
+            "accuracy", "macro_f1", "latency_ms", "fps",
+            "parameter_count", "flops",
+        )
+        if key in metrics
+    }
+    print(f"\n{BOLD}Pipeline metrics (verbatim from the harness):{RESET}")
+    print(json.dumps(interesting, indent=2, default=str))
+
+    onnx_path = Path(result.onnx_path) if result.onnx_path else None
+    if onnx_path and onnx_path.exists():
+        ok(f"ONNX file size = {onnx_path.stat().st_size / (1024 * 1024):.2f} MB")
+    else:
+        warn("ONNX export missing; check the run directory for failures.")
+
+    header("EDGE INFERENCE WALK-THROUGH")
+    print(
+        f"Run the exported model on a sample image with no extra config:\n"
+        f"  {BOLD}python scripts/edge_infer.py --model {onnx_path}{RESET}"
+    )
+    if onnx_path is not None:
+        print(
+            f"\nRun on a video with the same metadata-self-contained file:\n"
+            f"  {BOLD}python scripts/video_infer.py --model {onnx_path} "
+            f"--video <input.mp4>{RESET}"
+        )
 
     header("PROJECT FINALIZED")
-    typing_print(f"{BOLD}{GREEN}Evaluation Report and Telemetry History saved to disk.{RESET}", 0.04)
-    print("\n")
+    print(
+        "Every number above came from the actual run; the script does "
+        "not print pre-baked metrics. Re-run with --prompt to compile "
+        "a different model end-to-end."
+    )
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
