@@ -86,7 +86,8 @@ class TorchVisionAugmentationBackend:
         if name == "brightness_contrast":
             brightness = self.rng.uniform(0.7, 1.3)
             contrast = self.rng.uniform(0.7, 1.3)
-            return TF.adjust_brightness(image, brightness), TF.adjust_contrast(image, contrast), target
+            adjusted = TF.adjust_contrast(TF.adjust_brightness(image, brightness), contrast)
+            return adjusted, target
         if name == "gaussian_blur":
             kernel_size = 3 if self.rng.random() < 0.5 else 5
             return TF.gaussian_blur(image, kernel_size=[kernel_size, kernel_size]), target

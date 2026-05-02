@@ -46,6 +46,11 @@ class PipelineResult:
     onnx_path: str | None
     onnx_verification: dict[str, Any] | None
     hpo_info: dict[str, Any] | None = None
+    telemetry: dict[str, Any] | None = None
+
+    @property
+    def hpo_results(self) -> Any:
+        return self.hpo_info
 
 
 class Prompt2ModelFactory:
@@ -212,17 +217,15 @@ class Prompt2ModelFactory:
         if hpo_info:
             metrics["hpo"] = hpo_info
 
-        # Telemetry Handshake
-        profiler = ModelProfiler(model, device)
-        if config.task == TaskType.CLASSIFICATION:
-            sample_batch, _ = next(iter(bundle.test_loader))
-            telemetry_data = profiler.profile(sample_batch[:1])
-        else:
-            sample_images, _ = next(iter(bundle.test_loader))
-            telemetry_data = profiler.profile(sample_images[0].unsqueeze(0))
-        telemetry = profiler.to_dict(telemetry_data)
-        telemetry["total_time_seconds"] = training.total_time_seconds
-        telemetry["device"] = training.device
+        telemetry = {
+            "total_time_seconds": training.total_time_seconds,
+            "device": training.device,
+            "latency_ms": metrics.get("latency_ms"),
+            "fps": metrics.get("fps"),
+            "gflops": metrics.get("gflops"),
+            "parameter_count": metrics.get("parameter_count"),
+            "parameter_count_millions": metrics.get("parameter_count_millions"),
+        }
 
         onnx_path: str | None = None
         verification: dict[str, Any] | None = None
@@ -272,7 +275,7 @@ class Prompt2ModelFactory:
             metrics=metrics,
             training_history=training.history,
             export_path=onnx_path,
-            hpo_results=hpo_results,
+            hpo_results=hpo_info,
             telemetry=telemetry,
         )
         
@@ -288,6 +291,7 @@ class Prompt2ModelFactory:
             onnx_path=onnx_path,
             onnx_verification=verification,
             hpo_info=hpo_info,
+            telemetry=telemetry,
         )
 
 
