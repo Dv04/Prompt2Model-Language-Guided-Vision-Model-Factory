@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{Parser and label-resolver evaluation. The parsing rubric covers 12 prompts spanning classification and detection, with priority and environment tags. The label benchmark covers 8 paraphrased label requests against ImageNet-style class names.}
+\label{tab:parser_results}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lcc}
+\toprule
+\textbf{Field} & \textbf{Exact-match} & \textbf{Cases} \\
+\midrule
+Task type            & 91.7\% & 12 \\
+Requested labels     & 91.7\% & 12 \\
+Priority tag         & 100\%  & 12 \\
+Environment tag      & 100\%  & 12 \\
+Label resolver       & 100\%  & 8  \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Real benchmark summary across two datasets. Both comparisons keep the backbone fixed and change only the prompt-activated augmentation recipe.}
+\label{tab:progress_results}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llccc}
+\toprule
+\textbf{Dataset} & \textbf{Split} & \textbf{Fixed} & \textbf{Guided} & \textbf{$\Delta$} \\
+\midrule
+Beans & clean & 94.5\% & 90.6\% & -3.9 \\
+Beans & low-light & 44.5\% & 62.5\% & +18.0 \\
+CIFAR-10 & clean & 78.5\% & 79.0\% & +0.5 \\
+CIFAR-10 & blur & 38.7\% & 66.5\% & +27.7 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

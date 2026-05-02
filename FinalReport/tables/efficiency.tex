@@ -1,0 +1,16 @@
+\begin{table}[t]
+\centering
+\caption{Edge deployment telemetry recorded by the exporter on a CPU host (Apple Silicon, ONNX Runtime). Latency is single image inference at the native input resolution. The CIFAR-10 row is for the trained classifier; the smoke rows use the integration smoke data and reflect a different input distribution.}
+\label{tab:efficiency}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Model} & \textbf{Task} & \textbf{Lat. (ms)} & \textbf{FPS} & \textbf{GFLOPs} & \textbf{Params (M)} \\
+\midrule
+MobileNetV3-S (CIFAR-10)   & Cls. & 15.8  & 63.3 & 0.0094 & 1.52 \\
+MobileNetV3-S (smoke host) & Cls. & 84.0  & 11.9 & 0.0116 & 1.52 \\
+SSDLite320-MNV3-L (smoke)  & Det. & 118.7 & 8.4  & 0.4285 & 2.22 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

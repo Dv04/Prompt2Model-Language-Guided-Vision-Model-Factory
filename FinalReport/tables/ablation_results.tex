@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{Beans ablation under the same training budget.}
+\label{tab:ablation_results}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccc}
+\toprule
+\textbf{Config} & \textbf{Init} & \textbf{Clean} & \textbf{Low-light} \\
+\midrule
+Fixed MNV3-S & ImageNet & 94.5\% & 44.5\% \\
+Guided MNV3-S & ImageNet & 90.6\% & 62.5\% \\
+Guided MNV3-S & scratch & 33.6\% & 33.6\% \\
+Guided EffNet-B0 & ImageNet & 95.3\% & 66.4\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
