@@ -1,95 +1,137 @@
 #!/usr/bin/env python3
-"""run_tune_hpo.py — Demo script for Ray Tune HPO with terminal-step ONNX export."""
+"""run_tune_hpo.py: Ray Tune HPO driven by a parsed prompt.
 
+This used to be hard-wired to the Beans dataset, which meant that
+every prompt produced a bean-disease classifier regardless of what
+the user asked for. The script now parses the prompt, picks the best
+matching cached dataset via ``dataset_registry.select_dataset``, and
+routes the HPO study through that dataset. When the requested labels
+are not in any cached dataset the substitution is announced explicitly
+so that downstream demos do not silently mismatch the prompt.
+"""
+from __future__ import annotations
+
+import argparse
+import os
 import sys
 from pathlib import Path
 
 import torch
-from datasets import load_dataset
 from torch.utils.data import DataLoader
 
-import os
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SRC = REPO_ROOT / "src"
+sys.path.insert(0, str(SRC))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+os.environ["PYTHONPATH"] = (
+    str(SRC) + (f":{os.environ['PYTHONPATH']}" if "PYTHONPATH" in os.environ else "")
+)
 
-# Add src to path for local development and for Ray workers
-src_path = str(Path(__file__).resolve().parents[1] / "src")
-sys.path.insert(0, src_path)
-os.environ["PYTHONPATH"] = src_path + (f":{os.environ['PYTHONPATH']}" if "PYTHONPATH" in os.environ else "")
-
-from prompt2model.config import DatasetConfig, DatasetFormat, PipelineConfig, RequestedLabel, TaskType
+from prompt2model.config import (
+    DatasetConfig, DatasetFormat, PipelineConfig, RequestedLabel,
+    ResolvedLabel, TaskType,
+)
+from prompt2model.parsing import parse_prompt
 from prompt2model.tuning import HAS_RAY, export_best_trial, run_hpo
+from dataset_registry import select_dataset
 
 if not HAS_RAY:
-    print("✗ Error: Ray Tune is not installed. Install with 'pip install ray[tune]'")
+    print("Ray Tune is not installed. pip install 'ray[tune]'.")
     sys.exit(1)
 
 from ray import tune
 
 
-def main():
-    # Provide the src path to Ray workers explicitly
-    src_path = str(Path(__file__).resolve().parents[1] / "src")
-    import ray
-    ray.init(runtime_env={"env_vars": {"PYTHONPATH": src_path}}, ignore_reinit_error=True)
+def _build_loaders(record_root: Path, image_size: int):
+    from torchvision import datasets, transforms
 
-    # 1. Setup Beans Dataset
-    dataset = load_dataset("beans")
-    class_names = list(dataset["train"].features["labels"].names)
-    num_classes = len(class_names)
-
-    # Simplified loader construction for demo
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from run_beans_real_benchmark import BeansDataset
-    # For the sake of this demo script being standalone, we'll use a generic approach if possible
-    # but since BeansDataset is specifically defined in Venkata's scripts, we'll mock a simple one
-    
-    from torch.utils.data import Dataset as TorchDataset
-    from torchvision import transforms
-    
-    class SimpleDataset(TorchDataset):
-        def __init__(self, hf_split):
-            self.hf_split = hf_split
-            self.transform = transforms.Compose([
-                transforms.Resize((160, 160)),
-                transforms.ToTensor(),
-                transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-            ])
-        def __len__(self): return len(self.hf_split)
-        def __getitem__(self, idx):
-            item = self.hf_split[idx]
-            image = item["image"].convert("RGB")
-            return self.transform(image), torch.tensor(int(item["labels"]))
-
-    train_set = SimpleDataset(dataset["train"].select(range(100)))  # Small subset for demo
-    val_set = SimpleDataset(dataset["validation"].select(range(20)))
-    
+    transform = transforms.Compose([
+        transforms.Resize((image_size, image_size)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
+    ])
+    full = datasets.ImageFolder(str(record_root), transform=transform)
+    n = len(full)
+    val_count = max(1, n // 5)
+    train_count = n - val_count
+    train_set, val_set = torch.utils.data.random_split(
+        full, [train_count, val_count],
+        generator=torch.Generator().manual_seed(0),
+    )
     train_loader = DataLoader(train_set, batch_size=8, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=8, shuffle=False)
-    
-    example_input = torch.randn(1, 3, 160, 160)
+    return train_loader, val_loader, full.classes
 
-    # 2. Define Pipeline Config
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--prompt",
+        default=(
+            "Classify cats, dogs, and ships in low light scenes "
+            "and prioritize speed for an edge device."
+        ),
+    )
+    parser.add_argument("--num-samples", type=int, default=2)
+    parser.add_argument("--image-size", type=int, default=96)
+    parser.add_argument("--output-dir", default="output/tune_hpo")
+    args = parser.parse_args()
+
+    placeholder_root = REPO_ROOT / "data/dummy"
+    placeholder_root.mkdir(parents=True, exist_ok=True)
+    placeholder_dataset = DatasetConfig(
+        root=str(placeholder_root),
+        format=DatasetFormat.IMAGEFOLDER,
+        image_size=args.image_size,
+    )
+    parsed = parse_prompt(args.prompt, placeholder_dataset)
+    parsed_labels = [label.name for label in parsed.labels]
+    print(f"[parse] task={parsed.task.value} labels={parsed_labels}")
+
+    workdir = REPO_ROOT / "output" / "demo_datasets"
+    record = select_dataset(parsed_labels, REPO_ROOT, workdir)
+    if record.substituted:
+        print(f"[registry] WARNING: {record.notes}")
+    else:
+        print(f"[registry] {record.notes}")
+
+    train_loader, val_loader, class_names = _build_loaders(
+        record.root, args.image_size,
+    )
+    num_classes = len(class_names)
+    example_input = torch.randn(1, 3, args.image_size, args.image_size)
+
     config = PipelineConfig(
-        prompt="Classify beans diseases.",
+        prompt=args.prompt,
         task=TaskType.CLASSIFICATION,
         labels=[RequestedLabel(name=name) for name in class_names],
-        dataset=DatasetConfig(root="data/beans", format=DatasetFormat.IMAGEFOLDER, image_size=160),
+        dataset=DatasetConfig(
+            root=str(record.root),
+            format=DatasetFormat.IMAGEFOLDER,
+            image_size=args.image_size,
+        ),
         model_name="mobilenet_v3_small",
     )
-    # Ensure resolved_labels is populated for metadata injection
-    from prompt2model.config import ResolvedLabel
     config.resolved_labels = [
-        ResolvedLabel(requested_label=n, dataset_label=n, score=1.0, method="identity")
-        for n in class_names
+        ResolvedLabel(
+            requested_label=name, dataset_label=name,
+            score=1.0, method="identity",
+        )
+        for name in class_names
     ]
 
-    # 3. Define HPO Search Space
+    import ray
+    ray.init(
+        runtime_env={"env_vars": {"PYTHONPATH": str(SRC)}},
+        ignore_reinit_error=True,
+    )
+
     search_space = {
         "learning_rate": tune.loguniform(1e-4, 1e-2),
         "weight_decay": tune.uniform(1e-5, 1e-3),
     }
 
-    # 4. Run HPO
-    print("🚀 Starting Ray Tune HPO...")
+    print(f"[hpo] starting Ray Tune with {args.num_samples} samples")
     results = run_hpo(
         config=config,
         class_names=class_names,
@@ -97,23 +139,24 @@ def main():
         val_loader=val_loader,
         example_input=example_input,
         search_space=search_space,
-        num_samples=2,  # Small number for demo
-        storage_path=Path.cwd() / "output" / "tune_hpo"
+        num_samples=args.num_samples,
+        storage_path=Path.cwd() / args.output_dir,
     )
 
-    # 5. Export Best Trial
-    print("🏆 Finding best trial and promoting ONNX artifact...")
-    best_onnx = export_best_trial(
-        results, 
-        output_path=Path.cwd() / "output" / "tune_hpo" / "promoted_model.onnx"
-    )
-    print(f"✓ Best model exported to: {best_onnx}")
+    promoted = Path(args.output_dir) / "promoted_model.onnx"
+    promoted.parent.mkdir(parents=True, exist_ok=True)
+    print("[hpo] promoting best trial")
+    onnx_path = export_best_trial(results, output_path=promoted)
+    print(f"[hpo] best ONNX written to {onnx_path}")
 
-    # 6. Verify with edge_infer.py
-    print("🔬 Verifying with edge_infer.py...")
     import subprocess
-    cmd = [sys.executable, "scripts/edge_infer.py", "--model", best_onnx, "--no-metadata-dump"]
-    subprocess.run(cmd)
+    subprocess.run(
+        [sys.executable, "scripts/edge_infer.py",
+         "--model", str(onnx_path), "--no-metadata-dump"],
+        check=False,
+    )
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
