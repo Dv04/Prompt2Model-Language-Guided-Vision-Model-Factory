@@ -34,6 +34,8 @@ def _add_shared_run_args(parser: argparse.ArgumentParser) -> None:
                         help="INT8-quantize the exported model (accuracy-floor gated)")
     parser.add_argument("--distill", action="store_true",
                         help="Distill from the accuracy-tier teacher before export")
+    parser.add_argument("--target", default=None,
+                        help="Deployment target: onnxruntime/cpu (default), tensorrt/jetson, ...")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     smoke = subparsers.add_parser("smoke-test")
     smoke.add_argument("--output-dir", default="output/smoke")
+
+    flywheel = subparsers.add_parser(
+        "flywheel", help="Inspect/export the hard-case store (the retrain loop's input)"
+    )
+    flywheel.add_argument("--store", required=True, help="HardCaseStore root directory")
+    flywheel.add_argument("--action", choices=["status", "export"], default="status")
+    flywheel.add_argument("--output-dir", default="output/flywheel_export")
+    flywheel.add_argument("--pseudo-label", action="store_true",
+                          help="Bucket exported images by the model's own prediction")
 
     return parser
 
@@ -91,11 +102,14 @@ def _run_pipeline(args: argparse.Namespace) -> dict[str, object]:
         planner_mode=getattr(args, "planner", "auto"),
         quantize=getattr(args, "quantize", False),
         distill=getattr(args, "distill", False),
+        target=getattr(args, "target", None),
     )
     return {
         "run_dir": result.run_dir,
         "report_path": result.report_path,
         "onnx_path": result.onnx_path,
+        "compressed_onnx_path": result.compressed_onnx_path,
+        "deployment": result.deployment,
         "metrics": result.metrics,
     }
 
@@ -118,6 +132,17 @@ def main() -> None:
 
     if args.command == "run":
         print(json.dumps(_run_pipeline(args), indent=2))
+        return
+
+    if args.command == "flywheel":
+        from prompt2model.flywheel import HardCaseStore
+
+        store = HardCaseStore(args.store)
+        if args.action == "status":
+            print(json.dumps(store.summary(), indent=2))
+        else:
+            exported = store.export_imagefolder(args.output_dir, pseudo_label=args.pseudo_label)
+            print(json.dumps({"exported_to": str(exported), "count": store.count()}, indent=2))
         return
 
     if args.command == "smoke-test":

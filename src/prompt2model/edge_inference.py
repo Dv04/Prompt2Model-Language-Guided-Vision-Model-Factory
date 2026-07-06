@@ -25,6 +25,12 @@ class EdgeModel:
         self.mean = np.array(json.loads(self.metadata.get("normalization_mean", "[0.485, 0.456, 0.406]")), dtype=np.float32)
         self.std = np.array(json.loads(self.metadata.get("normalization_std", "[0.229, 0.224, 0.225]")), dtype=np.float32)
         self.labels = json.loads(self.metadata.get("labels", "[]"))
+        # B1 phase 4 — the calibration block the factory embedded (may be
+        # absent on artifacts from older runs → uncalibrated behaviour).
+        try:
+            self.calibration = json.loads(self.metadata.get("calibration", "{}") or "{}")
+        except json.JSONDecodeError:
+            self.calibration = {}
 
     def _read_metadata(self) -> dict[str, str]:
         model = self.session.get_modelmeta()
@@ -42,8 +48,15 @@ class EdgeModel:
         # 5. Batch dimension
         return np.expand_dims(img_np, axis=0).astype(np.float32)
 
-    def run_inference(self, image_path: str | Path) -> dict[str, Any]:
-        """Load image, preprocess using metadata, and run inference."""
+    def run_inference(self, image_path: str | Path, hard_case_store: Any | None = None) -> dict[str, Any]:
+        """Load image, preprocess using metadata, and run inference.
+
+        When the artifact carries a calibration block, logits are
+        temperature-scaled and the conformal threshold yields ``abstained``
+        — the model says "I don't know" instead of guessing. Passing a
+        ``flywheel.HardCaseStore`` captures abstained/low-confidence frames
+        for the retrain loop.
+        """
         image = Image.open(image_path)
         input_tensor = self.preprocess(image)
         input_name = self.session.get_inputs()[0].name
@@ -51,17 +64,37 @@ class EdgeModel:
 
         if self.task == "classification":
             logits = outputs[0][0]
-            # Softmax
-            exp_logits = np.exp(logits - np.max(logits))
+            calibrated = bool(self.calibration.get("calibrated"))
+            temperature = float(self.calibration.get("temperature", 1.0) or 1.0) if calibrated else 1.0
+            scaled = logits / max(temperature, 1e-6)
+            exp_logits = np.exp(scaled - np.max(scaled))
             probs = exp_logits / exp_logits.sum()
             best_idx = int(np.argmax(probs))
-            return {
+            score = float(probs[best_idx])
+            abstained = False
+            if calibrated:
+                threshold = float(self.calibration.get("conformal_threshold", float("inf")))
+                abstained = (1.0 - score) > threshold
+            result = {
                 "label": self.labels[best_idx] if self.labels else str(best_idx),
-                "score": float(probs[best_idx]),
+                "score": score,
                 "all_scores": {self.labels[i]: float(probs[i]) for i in range(len(self.labels))}
                 if self.labels
                 else {},
+                "calibrated": calibrated,
+                "abstained": abstained,
             }
+            if hard_case_store is not None and hard_case_store.should_capture(
+                abstained=abstained, confidence=score
+            ):
+                hard_case_store.save(
+                    image,
+                    prediction=result["label"],
+                    confidence=score,
+                    abstained=abstained,
+                    source=str(image_path),
+                )
+            return result
         else:
             # Detection: [boxes, scores, labels]
             boxes, scores, labels = outputs

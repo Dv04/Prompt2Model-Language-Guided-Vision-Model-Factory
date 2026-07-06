@@ -51,6 +51,9 @@ class PipelineResult:
     # passed the accuracy floor (None = not attempted or refused).
     compression: dict[str, Any] | None = None
     compressed_onnx_path: str | None = None
+    # B1 deployment stage: which runtime the final artifact targets, whether
+    # it was built locally, and the build recipe when it wasn't.
+    deployment: dict[str, Any] | None = None
 
     @property
     def hpo_results(self) -> Any:
@@ -104,6 +107,7 @@ class Prompt2ModelFactory:
         device = select_device(config.task, requested=config.training.device)
 
         hpo_info: dict[str, Any] | None = None
+        calibration_info: dict[str, Any] | None = None  # classification-only for now
 
         if config.task == TaskType.CLASSIFICATION:
             bundle = build_classification_bundle(
@@ -204,6 +208,13 @@ class Prompt2ModelFactory:
             sample_batch, _ = next(iter(bundle.test_loader))
             benchmark = benchmark_model(model, sample_batch[:1], device=device)
 
+            # Phase 4 — calibration + conformal abstain threshold, fitted on
+            # the validation split. Ships in the artifact metadata; EdgeModel
+            # applies it at inference (the guarantee handshake).
+            from prompt2model.calibration import calibrate_classification
+            calibration_info = calibrate_classification(model, bundle.val_loader, device)
+            metrics["calibration"] = calibration_info
+
         else:
             # Detection path
             bundle = build_detection_bundle(
@@ -301,6 +312,8 @@ class Prompt2ModelFactory:
                 metadata["hpo_trials"] = hpo_info.get("n_trials_completed", 0)
                 metadata["hpo_budget_minutes"] = hpo_info.get("budget_minutes", 0)
             metadata = build_metadata_props(config, bundle.class_names)
+            if calibration_info and calibration_info.get("calibrated"):
+                metadata["calibration"] = calibration_info
             try:
                 if config.task == TaskType.CLASSIFICATION:
                     sample_batch, _ = next(iter(bundle.test_loader))
@@ -360,6 +373,19 @@ class Prompt2ModelFactory:
                 }
                 metrics["compression"] = compression_info
 
+        # Phase 3 — deployment target: compile the final artifact for the
+        # requested runtime. ONNX Runtime is universal; accelerator targets
+        # (TensorRT, ...) build locally when the toolchain exists, else emit
+        # a reproducible build recipe to run on the device.
+        deployment_info: dict[str, Any] | None = None
+        if onnx_path:
+            from prompt2model.targets import resolve_target
+
+            final_artifact = compressed_onnx_path or onnx_path
+            target = resolve_target(config.data_context.deployment_target)
+            deployment_info = target.prepare(final_artifact, run_dir, metadata).to_dict()
+            metrics["deployment"] = deployment_info
+
         report_path = write_markdown_report(
             run_dir / "evaluation_report.md",
             config=config,
@@ -385,6 +411,7 @@ class Prompt2ModelFactory:
             telemetry=telemetry,
             compression=compression_info,
             compressed_onnx_path=compressed_onnx_path,
+            deployment=deployment_info,
         )
 
 
@@ -400,6 +427,7 @@ def run_from_prompt(
     planner_mode: PlannerMode = "auto",
     quantize: bool = False,
     distill: bool = False,
+    target: str | None = None,
 ) -> PipelineResult:
     """Run the full pipeline from a natural language prompt.
 
@@ -424,4 +452,6 @@ def run_from_prompt(
         config.compression.enable_quantization = True
     if distill:
         config.compression.enable_distillation = True
+    if target:
+        config.data_context.deployment_target = target
     return factory.run(config, enable_hpo=enable_hpo)
