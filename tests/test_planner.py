@@ -95,6 +95,63 @@ def test_unconfigured_planner_raises():
         LLMPlanner().plan(PROMPT)
 
 
+def test_no_think_marker_is_opt_in():
+    # Measured: the "/no_think" prompt marker DERAILS qwen3.5 — it must
+    # never ride the prompt unless explicitly requested.
+    transport = _FakeTransport(json.dumps(GOOD_PLAN))
+    LLMPlanner(transport=transport, no_think=True).plan(PROMPT)
+    assert "/no_think" not in transport.calls[0][0]["content"]
+    transport = _FakeTransport(json.dumps(GOOD_PLAN))
+    LLMPlanner(transport=transport, no_think=True, no_think_prompt_marker=True).plan(PROMPT)
+    assert transport.calls[0][0]["content"].endswith("/no_think")
+
+
+def test_think_blocks_are_stripped():
+    reply = f"<think>hmm, labels...</think>\n{json.dumps(GOOD_PLAN)}"
+    plan = LLMPlanner(transport=_FakeTransport(reply)).plan(PROMPT)
+    assert plan.task == TaskType.DETECTION
+
+
+def test_api_flavor_request_shapes(monkeypatch):
+    """Explicit flavors hit the right URL with the right body + parse the
+    right response shape — no network (urlopen is stubbed)."""
+    import io
+    import urllib.request as _url
+
+    captured = {}
+
+    def _fake_urlopen(request, timeout=0):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode())
+
+        class _Resp(io.BytesIO):
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        if "/api/chat" in request.full_url:
+            return _Resp(json.dumps({"message": {"content": json.dumps(GOOD_PLAN)}}).encode())
+        return _Resp(json.dumps(
+            {"choices": [{"message": {"content": json.dumps(GOOD_PLAN)}}]}
+        ).encode())
+
+    monkeypatch.setattr(_url, "urlopen", _fake_urlopen)
+
+    plan = LLMPlanner(endpoint="http://x", model="m", api_flavor="ollama").plan(PROMPT)
+    assert plan.task == TaskType.DETECTION
+    assert captured["url"].endswith("/api/chat")
+    assert captured["body"]["think"] is False and captured["body"]["format"] == "json"
+
+    plan = LLMPlanner(endpoint="http://x", model="m", api_flavor="openai").plan(PROMPT)
+    assert captured["url"].endswith("/v1/chat/completions")
+    assert captured["body"]["response_format"] == {"type": "json_object"}
+
+    with pytest.raises(ValueError):
+        LLMPlanner(api_flavor="banana")
+
+
 # ── plan_prompt modes ────────────────────────────────────────────────────────
 
 

@@ -34,7 +34,7 @@ import os
 import re
 import urllib.error
 import urllib.request
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -56,6 +56,19 @@ Transport = Callable[[list[dict[str, str]]], str]
 ENV_ENDPOINT = "P2M_LLM_ENDPOINT"
 ENV_MODEL = "P2M_LLM_MODEL"
 ENV_TIMEOUT = "P2M_LLM_TIMEOUT"
+# Hybrid-thinking models (Qwen3 family etc.) can spend MINUTES reasoning
+# about a schema task before answering. On the native Ollama API the fix is
+# the real `think: false` switch (default on). Set to 0 to let the model think.
+ENV_NOTHINK = "P2M_LLM_NOTHINK"
+# OPT-IN prompt-level "/no_think" marker for OpenAI-flavor endpoints serving
+# qwen3-CLASS models. Off by default — measured on qwen3.5 the marker
+# DERAILS generation (16.9 s plain vs indefinite stall with it appended).
+ENV_NOTHINK_MARKER = "P2M_LLM_NOTHINK_MARKER"
+# API flavor: "openai" (any /v1/chat/completions server), "ollama" (native
+# /api/chat — gives a REAL think:false switch + json mode; measured 8.6 s vs
+# 100 s+ timeout for the same qwen3.5 planning call through the compat
+# layer, which ignores the prompt-level /no_think), or "auto" (probe once).
+ENV_FLAVOR = "P2M_LLM_FLAVOR"
 
 PlannerMode = Literal["auto", "llm", "regex"]
 
@@ -129,7 +142,8 @@ Rules:
 
 
 def _strip_fences(text: str) -> str:
-    text = text.strip()
+    # Some servers inline the thinking phase into content — drop it first.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     match = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL)
     if match:
         return match.group(1).strip()
@@ -145,11 +159,20 @@ class LLMPlanner:
         model: str | None = None,
         timeout: float = 60.0,
         transport: Transport | None = None,
+        no_think: bool = True,
+        api_flavor: str = "auto",
+        no_think_prompt_marker: bool = False,
     ) -> None:
         self.endpoint = (endpoint or "").rstrip("/")
         self.model = model or ""
         self.timeout = timeout
         self._transport = transport
+        self.no_think = no_think
+        self.no_think_prompt_marker = no_think_prompt_marker
+        if api_flavor not in ("auto", "openai", "ollama"):
+            raise ValueError("api_flavor must be auto|openai|ollama")
+        self.api_flavor = api_flavor
+        self._resolved_flavor: str | None = None if api_flavor == "auto" else api_flavor
 
     @classmethod
     def from_env(cls) -> "LLMPlanner":
@@ -162,7 +185,28 @@ class LLMPlanner:
             endpoint=os.getenv(ENV_ENDPOINT, ""),
             model=os.getenv(ENV_MODEL, ""),
             timeout=timeout,
+            no_think=os.getenv(ENV_NOTHINK, "1").strip().lower() not in {"0", "false", "no", "off"},
+            api_flavor=os.getenv(ENV_FLAVOR, "auto").strip().lower() or "auto",
+            no_think_prompt_marker=os.getenv(ENV_NOTHINK_MARKER, "0").strip().lower()
+            in {"1", "true", "yes", "on"},
         )
+
+    def _flavor(self) -> str:
+        """Resolve auto → ollama|openai by probing the server once. Ollama
+        answers GET /api/version; anything else gets the OpenAI path."""
+        if self._resolved_flavor is None:
+            flavor = "openai"
+            try:
+                with urllib.request.urlopen(
+                    urllib.request.Request(f"{self.endpoint}/api/version"), timeout=3
+                ) as response:
+                    if response.status == 200:
+                        flavor = "ollama"
+            except Exception:  # noqa: BLE001 — not ollama (or unreachable)
+                pass
+            self._resolved_flavor = flavor
+            logger.debug("planner endpoint flavor resolved: %s", flavor)
+        return self._resolved_flavor
 
     @property
     def is_configured(self) -> bool:
@@ -174,19 +218,31 @@ class LLMPlanner:
         if not self.endpoint or not self.model:
             raise PlannerError(
                 f"LLM planner not configured — set {ENV_ENDPOINT} and {ENV_MODEL} "
-                "(any OpenAI-compatible endpoint, e.g. an Ollama host)."
+                "(an Ollama host or any OpenAI-compatible endpoint)."
             )
-        body = json.dumps(
-            {
+        if self._flavor() == "ollama":
+            # Native API: real think switch + json mode (the compat layer
+            # ignores prompt-level /no_think for some model templates).
+            url = f"{self.endpoint}/api/chat"
+            body: dict[str, Any] = {
+                "model": self.model,
+                "messages": messages,
+                "stream": False,
+                "think": not self.no_think,
+                "format": "json",
+                "options": {"temperature": 0},
+            }
+        else:
+            url = f"{self.endpoint}/v1/chat/completions"
+            body = {
                 "model": self.model,
                 "messages": messages,
                 "temperature": 0,
                 "response_format": {"type": "json_object"},
             }
-        ).encode("utf-8")
         request = urllib.request.Request(
-            f"{self.endpoint}/v1/chat/completions",
-            data=body,
+            url,
+            data=json.dumps(body).encode("utf-8"),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -196,14 +252,19 @@ class LLMPlanner:
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
             raise PlannerError(f"LLM endpoint error: {exc}") from exc
         try:
+            if self._flavor() == "ollama":
+                return str(payload["message"]["content"])
             return str(payload["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
-            raise PlannerError(f"unexpected chat-completions response shape: {exc}") from exc
+            raise PlannerError(f"unexpected chat response shape: {exc}") from exc
 
     def plan(self, prompt: str) -> PlannerOutput:
         """Prompt → validated PlannerOutput, with one repair round-trip."""
+        system = _SYSTEM_PROMPT
+        if self.no_think and self.no_think_prompt_marker:
+            system += "\n/no_think"
         messages = [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ]
         raw = self._chat(messages)
