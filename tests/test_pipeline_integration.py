@@ -25,30 +25,30 @@ def test_full_pipeline_integration(tmp_path: str) -> None:
     prompt = "Classify red squares and blue circles. Prioritize accuracy and use a 20 minute budget."
     config = factory.build_config(prompt, dataset=dataset_cfg)
     
-    # Manually ensure HPO conditions are met for the test
-    config.constraints.budget_minutes = 20
+    # Keep the HPO budget tiny so the test stays fast on synthetic data.
+    config.constraints.budget_minutes = 1
     config.training.epochs = 1
     config.training.max_steps_per_epoch = 2
     config.export.output_dir = str(tmp / "output")
-    
-    # 4. Run Pipeline
-    result = factory.run(config)
-    
+
+    # 4. Run Pipeline (HPO explicitly enabled — hpo_info is None otherwise)
+    result = factory.run(config, enable_hpo=True)
+
     # 5. Verify Handshake
     assert isinstance(result, PipelineResult)
     assert result.hpo_results is not None
-    assert result.hpo_results.n_trials_completed >= 1
-    
+    assert result.hpo_results["n_trials_completed"] >= 1
+
     assert result.onnx_path is not None
     assert Path(result.onnx_path).exists()
-    
+
     # Check that edge verification was recorded in metrics
     assert result.metrics.get("edge_inference_verified") is True
-    
+
     # Telemetry verification
     assert result.telemetry is not None
     assert "fps" in result.telemetry
-    assert "parameters_total" in result.telemetry
+    assert "parameter_count" in result.telemetry
     assert result.telemetry["fps"] >= 0
     
     # Verify report existence
