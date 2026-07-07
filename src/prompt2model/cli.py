@@ -22,6 +22,20 @@ def _add_shared_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-steps-per-epoch", type=int, default=10)
     parser.add_argument("--device")
     parser.add_argument("--enable-hpo", action="store_true", help="Enable Optuna hyperparameter optimization")
+    parser.add_argument(
+        "--planner", choices=["auto", "llm", "regex"], default="auto",
+        help="Intent parser: 'llm' requires an LLM endpoint, 'regex' is the "
+             "deterministic parser, 'auto' uses the LLM when configured and "
+             "falls back to regex (default).",
+    )
+    parser.add_argument("--llm-endpoint", help="OpenAI-compatible base URL (overrides P2M_LLM_ENDPOINT)")
+    parser.add_argument("--llm-model", help="Model name at the endpoint (overrides P2M_LLM_MODEL)")
+    parser.add_argument("--quantize", action="store_true",
+                        help="INT8-quantize the exported model (accuracy-floor gated)")
+    parser.add_argument("--distill", action="store_true",
+                        help="Distill from the accuracy-tier teacher before export")
+    parser.add_argument("--target", default=None,
+                        help="Deployment target: onnxruntime/cpu (default), tensorrt/jetson, ...")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,6 +51,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     smoke = subparsers.add_parser("smoke-test")
     smoke.add_argument("--output-dir", default="output/smoke")
+
+    flywheel = subparsers.add_parser(
+        "flywheel", help="Inspect/export the hard-case store (the retrain loop's input)"
+    )
+    flywheel.add_argument("--store", required=True, help="HardCaseStore root directory")
+    flywheel.add_argument("--action", choices=["status", "export"], default="status")
+    flywheel.add_argument("--output-dir", default="output/flywheel_export")
+    flywheel.add_argument("--pseudo-label", action="store_true",
+                          help="Bucket exported images by the model's own prediction")
 
     return parser
 
@@ -55,9 +78,19 @@ def _run_pipeline(args: argparse.Namespace) -> dict[str, object]:
         device=args.device,
     )
     task_hint = TaskType(args.task) if args.task else None
-    
+
     enable_hpo = getattr(args, "enable_hpo", False)
-    
+
+    planner = None
+    if getattr(args, "llm_endpoint", None) or getattr(args, "llm_model", None):
+        from prompt2model.planner import LLMPlanner
+        base = LLMPlanner.from_env()
+        planner = LLMPlanner(
+            endpoint=getattr(args, "llm_endpoint", None) or base.endpoint,
+            model=getattr(args, "llm_model", None) or base.model,
+            timeout=base.timeout,
+        )
+
     result = run_from_prompt(
         prompt=args.prompt,
         dataset=dataset,
@@ -65,11 +98,18 @@ def _run_pipeline(args: argparse.Namespace) -> dict[str, object]:
         task_hint=task_hint,
         training_overrides=training,
         enable_hpo=enable_hpo,
+        planner=planner,
+        planner_mode=getattr(args, "planner", "auto"),
+        quantize=getattr(args, "quantize", False),
+        distill=getattr(args, "distill", False),
+        target=getattr(args, "target", None),
     )
     return {
         "run_dir": result.run_dir,
         "report_path": result.report_path,
         "onnx_path": result.onnx_path,
+        "compressed_onnx_path": result.compressed_onnx_path,
+        "deployment": result.deployment,
         "metrics": result.metrics,
     }
 
@@ -92,6 +132,17 @@ def main() -> None:
 
     if args.command == "run":
         print(json.dumps(_run_pipeline(args), indent=2))
+        return
+
+    if args.command == "flywheel":
+        from prompt2model.flywheel import HardCaseStore
+
+        store = HardCaseStore(args.store)
+        if args.action == "status":
+            print(json.dumps(store.summary(), indent=2))
+        else:
+            exported = store.export_imagefolder(args.output_dir, pseudo_label=args.pseudo_label)
+            print(json.dumps({"exported_to": str(exported), "count": store.count()}, indent=2))
         return
 
     if args.command == "smoke-test":

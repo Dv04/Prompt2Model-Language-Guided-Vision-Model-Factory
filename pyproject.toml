@@ -18,6 +18,9 @@ dependencies = [
   "scikit-learn>=1.6",
   "onnx>=1.17",
   "onnxruntime>=1.24",
+  # onnxruntime.quantization (INT8 PTQ in the compression stage) imports
+  # ml_dtypes but onnxruntime does not declare it — pin it explicitly.
+  "ml_dtypes>=0.4",
   "optuna>=3.6",
   "ultralytics>=8.0",
   "ray[tune]>=2.10",

@@ -4,6 +4,7 @@ import re
 from collections.abc import Sequence
 
 from prompt2model.config import (
+    CompressionConfig,
     DataContext,
     DatasetConfig,
     ModelConstraints,
@@ -67,6 +68,16 @@ def _extract_budget_minutes(prompt: str) -> int:
     if unit.startswith("h"):
         return value * 60
     return value
+
+
+def _wants_quantization(prompt: str) -> bool:
+    normalized = prompt.lower()
+    return any(term in normalized for term in ("quantize", "quantized", "int8", "8-bit", "compress the model"))
+
+
+def _wants_distillation(prompt: str) -> bool:
+    normalized = prompt.lower()
+    return any(term in normalized for term in ("distill", "distilled", "distillation"))
 
 
 def _extract_environment_tags(prompt: str) -> list[str]:
@@ -166,5 +177,9 @@ def parse_prompt(
         data_context=data_context,
         dataset=dataset,
         training=training,
+        compression=CompressionConfig(
+            enable_quantization=_wants_quantization(prompt),
+            enable_distillation=_wants_distillation(prompt),
+        ),
         augmentation_tags=data_context.environment_tags,
     )

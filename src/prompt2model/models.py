@@ -14,7 +14,7 @@ from torchvision.models.detection import (
     ssdlite320_mobilenet_v3_large,
 )
 
-from prompt2model.config import PriorityPreset, TaskType
+from prompt2model.config import ModelConstraints, PriorityPreset, TaskType
 
 # YOLO and RT-DETR model names routed through ultralytics
 YOLO_MODELS: set[str] = {"yolov11n", "yolov11s", "yolov11m", "rtdetr-l", "rtdetr-x"}
@@ -48,6 +48,54 @@ def recommend_model_name(task: TaskType, priority: PriorityPreset) -> str:
     if priority == PriorityPreset.BALANCED:
         return "yolov11n"
     return "rtdetr-l"  # ACCURACY
+
+
+# Approximate parameter counts (millions) used for the max_parameters cap.
+_PARAMS_MILLIONS: dict[str, float] = {
+    "mobilenet_v3_small": 2.5,
+    "mobilenet_v3_large": 5.5,
+    "efficientnet_b0": 5.3,
+    "ssdlite320_mobilenet_v3_large": 3.4,
+    "yolov11n": 2.6,
+    "rtdetr-l": 32.0,
+}
+
+# Latency envelopes (ms) that hard-cap the tier regardless of the stated
+# priority: a "prioritize accuracy, under 25 ms" prompt gets the speed tier —
+# the stated constraint wins over the stated preference.
+_LATENCY_SPEED_MS = 30
+_LATENCY_BALANCED_MS = 80
+
+# Power budgets at or below this force the speed tier (camera-SoC class).
+_POWER_SPEED_W = 5.0
+
+_TIER_ORDER = (PriorityPreset.ACCURACY, PriorityPreset.BALANCED, PriorityPreset.SPEED)
+
+
+def recommend_model(task: TaskType, constraints: ModelConstraints) -> str:
+    """Constraint-driven model selection: priority sets the starting tier,
+    hard constraints (latency / power / parameter cap) can only push it DOWN
+    toward smaller models — never up."""
+    priority = constraints.priority
+
+    def _tier_index(p: PriorityPreset) -> int:
+        return _TIER_ORDER.index(p)
+
+    tier = _tier_index(priority)
+    if constraints.power_budget_w is not None and constraints.power_budget_w <= _POWER_SPEED_W:
+        tier = max(tier, _tier_index(PriorityPreset.SPEED))
+    if constraints.target_latency_ms is not None:
+        if constraints.target_latency_ms <= _LATENCY_SPEED_MS:
+            tier = max(tier, _tier_index(PriorityPreset.SPEED))
+        elif constraints.target_latency_ms <= _LATENCY_BALANCED_MS:
+            tier = max(tier, _tier_index(PriorityPreset.BALANCED))
+
+    cap = constraints.max_parameters_millions
+    while True:
+        name = recommend_model_name(task, _TIER_ORDER[tier])
+        if cap is None or _PARAMS_MILLIONS.get(name, 0.0) <= cap or tier == len(_TIER_ORDER) - 1:
+            return name
+        tier += 1
 
 
 def build_classification_model(name: str, num_classes: int, pretrained: bool = False) -> nn.Module:
