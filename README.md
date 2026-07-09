@@ -1,5 +1,12 @@
 # Prompt2Model
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+
+**[Live demo on Hugging Face Spaces](https://huggingface.co/spaces/Dhi-Technologies/prompt2model-demo)**
+&nbsp;|&nbsp;
+**[Example datasets](https://huggingface.co/datasets/Dhi-Technologies/prompt2model-examples)**
+
 `Prompt2Model` is a week-4 integrated prototype for the course project "Prompt2Model: Language-Guided Vision Model Factory".
 
 What is implemented:
@@ -13,6 +20,46 @@ What is validated:
 
 - Classification path runs end-to-end on synthetic data: prompt -> config -> training -> metrics -> ONNX export -> report
 - Detection path is integrated through the week-4 milestone: prompt -> config -> COCO loader -> detector training/eval smoke test
+
+## Architecture
+
+The pipeline as implemented in `src/prompt2model/pipeline.py`:
+
+```mermaid
+flowchart TD
+    A[Natural language prompt] --> B["parsing.parse_prompt (regex, default, offline)"]
+    A -.optional.-> C["planner.py: LLM overlay (auto/llm/regex mode)"]
+    B --> D[PipelineConfig]
+    C -.overlays non null fields onto.-> D
+    D --> E["label_resolution.LabelResolver (CLIP, lexical fallback)"]
+    D --> F["data.py: classification bundle or COCO detection bundle"]
+    F --> G["augmentations.py: TorchVisionAugmentationBackend"]
+    D --> H["models.py: recommend_model / registry"]
+    G --> I["training.py: train_classification_model / train_detection_model / train_yolo_model"]
+    H --> I
+    I -.optional.-> J["hpo.py / tuning.py: Optuna search"]
+    I -.optional, classification only.-> K["compression.py: distillation (teacher to student)"]
+    I --> L["evaluation.py: metrics + benchmark_model"]
+    K --> L
+    L -.classification only.-> M["calibration.py: temperature scaling + conformal abstain threshold"]
+    L --> N["exporting.py: export_model_to_onnx + verify_onnx"]
+    M --> N
+    N -.opt-in.-> O["compression.py: quantize_onnx + accuracy-floor gate (decide_gate)"]
+    O -->|gate passes| P["targets.py: resolve_target (onnxruntime default, tensorrt/jetson build or recipe)"]
+    O -->|gate refuses| P
+    N --> P
+    P --> Q["reporting.py: markdown evaluation report"]
+    P --> R["telemetry.py: run history"]
+    P --> S["edge_inference.py: EdgeModel (applies calibration + abstain at inference)"]
+    S -.optional.-> T["flywheel.py: HardCaseStore (captures abstained / low-confidence frames)"]
+```
+
+Notes on the diagram: the LLM planner and HPO are opt-in and off by default;
+distillation, quantization, and non-default deployment targets are opt-in
+via CLI flags or planner-extracted prompt fields; calibration and the
+compression accuracy-floor gate apply to the classification path today
+(detection follows the same interfaces where noted in-code but is not yet
+the fully validated path for those stages).
 
 ## Repo Layout
 
