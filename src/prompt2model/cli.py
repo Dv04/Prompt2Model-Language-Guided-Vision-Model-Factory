@@ -165,6 +165,13 @@ def main() -> None:
             batch_size=8,
             max_steps_per_epoch=4,
             device=None,
+            # From-scratch (pretrained=False) BatchNorm statistics re-estimated
+            # from batches of 8 over a couple of epochs never stabilize and the
+            # backbone collapses to an input-independent constant output (see
+            # models.py's own guidance: pretrained is "recommended for
+            # real-image tasks"). That collapse, not a training-budget issue,
+            # is what produced the degenerate published smoke-test accuracy.
+            pretrained=True,
         )
         detection_args = argparse.Namespace(
             prompt="Detect squares and circles in low light images and prioritize speed.",
@@ -178,6 +185,7 @@ def main() -> None:
             batch_size=2,
             max_steps_per_epoch=2,
             device="cpu",
+            pretrained=True,
         )
         print(
             json.dumps(

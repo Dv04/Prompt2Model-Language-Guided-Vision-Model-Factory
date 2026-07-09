@@ -95,6 +95,25 @@ class Prompt2ModelFactory:
         run_dir.mkdir(parents=True, exist_ok=True)
         config_path = run_dir / "pipeline_config.json"
 
+        # Seed every RNG the run touches. The dataset split and the
+        # augmentation backend already thread `config.dataset.seed` through
+        # (see `_split_items` in data.py and `TorchVisionAugmentationBackend`
+        # below), but model weight initialization and DataLoader shuffling
+        # use torch's global RNG and were left unseeded. That made full runs
+        # nondeterministic: a severely undertrained toy run (few epochs, tiny
+        # dataset) can land on an unlucky random init and score at or near
+        # 0.0 by chance alone, which is what produced the degenerate public
+        # smoke_test_results.json artifact. Seeding here makes the whole
+        # pipeline reproducible end to end.
+        import random as _random
+
+        import torch as _torch
+
+        _random.seed(config.dataset.seed)
+        _torch.manual_seed(config.dataset.seed)
+        if _torch.cuda.is_available():
+            _torch.cuda.manual_seed_all(config.dataset.seed)
+
         if config.task == TaskType.DETECTION and config.dataset.image_size < 320:
             config.dataset.image_size = 320
         if config.task == TaskType.DETECTION and config.training.batch_size < 2:
