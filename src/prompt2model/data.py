@@ -43,6 +43,95 @@ def _split_items(items: list[Any], val_split: float, test_split: float, seed: in
     return train_items, val_items, test_items
 
 
+def _largest_remainder_allocate(target_total: int, sizes: dict[Any, int]) -> dict[Any, int]:
+    """Distribute ``target_total`` slots across groups proportional to ``sizes``.
+
+    Standard largest-remainder (Hare quota) apportionment: each group gets
+    ``floor(quota)`` slots, then the groups with the largest fractional
+    remainder receive the leftover slots one at a time. This keeps the exact
+    same overall total that a flat (non-stratified) split would produce,
+    while spreading it across every group as evenly as its size allows -
+    instead of one lucky/unlucky global shuffle deciding a group gets zero.
+    """
+    grand_total = sum(sizes.values())
+    allocation = {label: 0 for label in sizes}
+    if grand_total <= 0 or target_total <= 0:
+        return allocation
+
+    quotas = {label: sizes[label] * target_total / grand_total for label in sizes}
+    allocation = {label: min(int(math.floor(quota)), sizes[label]) for label, quota in quotas.items()}
+    remainder = target_total - sum(allocation.values())
+    if remainder <= 0:
+        return allocation
+
+    # Largest fractional remainder first; ties broken by label for determinism.
+    order = sorted(sizes, key=lambda label: (-(quotas[label] - math.floor(quotas[label])), str(label)))
+    for label in order:
+        if remainder <= 0:
+            break
+        if allocation[label] < sizes[label]:
+            allocation[label] += 1
+            remainder -= 1
+    return allocation
+
+
+def _split_items_stratified(
+    items: list[Any],
+    val_split: float,
+    test_split: float,
+    seed: int,
+    label_of: Any,
+) -> tuple[list[Any], list[Any], list[Any]]:
+    """Split ``items`` into train/val/test with per-class proportions.
+
+    ``_split_items`` shuffles the whole pool and slices it, with no regard
+    for class balance. On a small dataset (e.g. the synthetic toy classification
+    set: 12 samples x 3 classes) that flat split can - and, with the default
+    seed, did - drop an entire class out of the validation or test slice
+    entirely. Evaluating a 3-way classifier on a split that never contains one
+    of the 3 classes produces meaningless, sometimes-zero metrics that look
+    like a training bug but are actually a sampling bug.
+
+    This keeps the same overall val/test sizes ``_split_items`` would produce
+    (``floor(total * split)``), so callers relying on those totals see no
+    change, but allocates those slots across classes via largest-remainder
+    apportionment so every class gets its fair share instead of whichever
+    classes a single global shuffle happened to favor.
+    """
+    groups: dict[Any, list[Any]] = {}
+    for item in items:
+        groups.setdefault(label_of(item), []).append(item)
+
+    rng = random.Random(seed)
+    for label in groups:
+        rng.shuffle(groups[label])
+
+    total = len(items)
+    target_test = int(math.floor(total * test_split))
+    target_val = int(math.floor(total * val_split))
+
+    sizes = {label: len(group) for label, group in groups.items()}
+    test_alloc = _largest_remainder_allocate(target_test, sizes)
+
+    train_items: list[Any] = []
+    val_items: list[Any] = []
+    test_items: list[Any] = []
+    remaining: dict[Any, list[Any]] = {}
+    for label, group in groups.items():
+        count = test_alloc[label]
+        test_items.extend(group[:count])
+        remaining[label] = group[count:]
+
+    remaining_sizes = {label: len(group) for label, group in remaining.items()}
+    val_alloc = _largest_remainder_allocate(target_val, remaining_sizes)
+    for label, group in remaining.items():
+        count = val_alloc[label]
+        val_items.extend(group[:count])
+        train_items.extend(group[count:])
+
+    return train_items, val_items, test_items
+
+
 class ClassificationDataset(Dataset):
     def __init__(
         self,
@@ -198,7 +287,9 @@ def build_classification_bundle(
     else:
         raise ValueError("classification bundle requires imagefolder or csv format")
 
-    train_samples, val_samples, test_samples = _split_items(samples, config.val_split, config.test_split, config.seed)
+    train_samples, val_samples, test_samples = _split_items_stratified(
+        samples, config.val_split, config.test_split, config.seed, label_of=lambda item: item[1]
+    )
     train_dataset = ClassificationDataset(train_samples, class_names, config.image_size, augmentations=augmentations)
     val_dataset = ClassificationDataset(val_samples, class_names, config.image_size, augmentations=None)
     test_dataset = ClassificationDataset(test_samples, class_names, config.image_size, augmentations=None)
