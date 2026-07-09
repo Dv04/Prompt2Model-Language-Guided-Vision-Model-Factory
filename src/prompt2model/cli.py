@@ -30,6 +30,8 @@ def _add_shared_run_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--llm-endpoint", help="OpenAI-compatible base URL (overrides P2M_LLM_ENDPOINT)")
     parser.add_argument("--llm-model", help="Model name at the endpoint (overrides P2M_LLM_MODEL)")
+    parser.add_argument("--pretrained", action="store_true",
+                        help="ImageNet-pretrained backbone (recommended for real-image tasks)")
     parser.add_argument("--quantize", action="store_true",
                         help="INT8-quantize the exported model (accuracy-floor gated)")
     parser.add_argument("--distill", action="store_true",
@@ -76,6 +78,7 @@ def _run_pipeline(args: argparse.Namespace) -> dict[str, object]:
         batch_size=args.batch_size,
         max_steps_per_epoch=args.max_steps_per_epoch,
         device=args.device,
+        pretrained=getattr(args, "pretrained", False),
     )
     task_hint = TaskType(args.task) if args.task else None
 
