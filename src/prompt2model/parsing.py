@@ -59,6 +59,21 @@ def _extract_latency_ms(prompt: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _extract_accuracy_floor(prompt: str) -> float | None:
+    """The prompt's absolute accuracy floor ("keep at least 70% accuracy") — a
+    contract term the gate must receive; previously only the LLM planner set it."""
+    normalized = prompt.lower()
+    match = re.search(
+        r"(?:at least|keep(?: at least)?|minimum(?: of)?|floor(?: of)?|maintain(?: at least)?)"
+        r"\s*(\d{1,3}(?:\.\d+)?)\s*%\s*accuracy",
+        normalized,
+    ) or re.search(r"(\d{1,3}(?:\.\d+)?)\s*%\s*accuracy\s*(?:floor|minimum)", normalized)
+    if not match:
+        return None
+    value = float(match.group(1)) / 100.0
+    return value if 0.0 < value <= 1.0 else None
+
+
 def _extract_budget_minutes(prompt: str) -> int:
     match = re.search(r"(\d+)\s*(minute|min|hour|hr)", prompt.lower())
     if not match:
@@ -165,6 +180,7 @@ def parse_prompt(
         speed_accuracy_tradeoff=_extract_speed_accuracy_tradeoff(priority),
         target_latency_ms=_extract_latency_ms(prompt),
         budget_minutes=_extract_budget_minutes(prompt),
+        accuracy_floor=_extract_accuracy_floor(prompt),
     )
     data_context = DataContext(environment_tags=_extract_environment_tags(prompt))
     labels = extract_requested_labels(prompt, task)
