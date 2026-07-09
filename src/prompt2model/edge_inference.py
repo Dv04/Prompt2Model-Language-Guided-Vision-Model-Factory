@@ -21,9 +21,31 @@ class EdgeModel:
         self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
         self.metadata = self._read_metadata()
         self.task = self.metadata.get("task", "classification")
-        self.image_size = int(self.metadata.get("image_size", "128"))
-        self.mean = np.array(json.loads(self.metadata.get("normalization_mean", "[0.485, 0.456, 0.406]")), dtype=np.float32)
-        self.std = np.array(json.loads(self.metadata.get("normalization_std", "[0.229, 0.224, 0.225]")), dtype=np.float32)
+
+        # Canonical metadata keys are the ones the real export path writes
+        # (``exporting.build_metadata_props``, used by ``pipeline.py`` and
+        # ``tuning.py``): "input_resolution" (a [height, width] list),
+        # "mean", "std". The legacy names below ("image_size",
+        # "normalization_mean", "normalization_std") were only ever produced
+        # by the now-unused ``exporting.build_full_metadata`` helper, but are
+        # accepted here as a tolerant fallback in case an artifact was built
+        # with it. Every real pipeline artifact carries the canonical keys.
+        resolution = self.metadata.get("input_resolution")
+        if resolution is not None:
+            self.image_size = int(json.loads(resolution)[0])
+        else:
+            self.image_size = int(self.metadata.get("image_size", "128"))
+
+        mean = self.metadata.get("mean")
+        if mean is None:
+            mean = self.metadata.get("normalization_mean", "[0.485, 0.456, 0.406]")
+        self.mean = np.array(json.loads(mean), dtype=np.float32)
+
+        std = self.metadata.get("std")
+        if std is None:
+            std = self.metadata.get("normalization_std", "[0.229, 0.224, 0.225]")
+        self.std = np.array(json.loads(std), dtype=np.float32)
+
         self.labels = json.loads(self.metadata.get("labels", "[]"))
         # B1 phase 4 - the calibration block the factory embedded (may be
         # absent on artifacts from older runs → uncalibrated behaviour).

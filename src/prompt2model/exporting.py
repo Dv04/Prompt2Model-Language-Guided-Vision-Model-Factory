@@ -89,7 +89,16 @@ class DetectionExportWrapper(nn.Module):
 
 
 def build_full_metadata(config: PipelineConfig) -> dict[str, Any]:
-    """Construct the complete ONNX metadata dictionary from a pipeline config.
+    """Construct an alternate ONNX metadata dictionary from a pipeline config.
+
+    NOT used by the real export path (``pipeline.py`` / ``tuning.py`` call
+    ``build_metadata_props``, below) - keep this in mind before consuming any
+    artifact built with it. Its key names ("image_size",
+    "normalization_mean", "normalization_std", "class_dictionary") differ
+    from the canonical ones ``EdgeModel`` and ``scripts/edge_infer.py`` read
+    ("input_resolution", "mean", "std", "class_dict"); ``EdgeModel`` accepts
+    both as a tolerant fallback, but new code should use
+    ``build_metadata_props`` to stay on the canonical contract.
 
     Embeds all information required for zero-configuration edge deployment:
     - task type and model name
