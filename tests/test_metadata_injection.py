@@ -1,4 +1,4 @@
-"""Week 5 — Madhuvani: Tests for enhanced ONNX metadata injection."""
+"""Week 5 - Madhuvani: Tests for enhanced ONNX metadata injection."""
 
 import json
 

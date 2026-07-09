@@ -1,4 +1,4 @@
-"""Weeks 9–10 — Dev: Language-to-Config ablation suite.
+"""Weeks 9-10 - Dev: Language-to-Config ablation suite.
 
 Contains 30 diverse test prompts with ground-truth expectations to validate
 parsing accuracy and configuration mapping.

@@ -1,20 +1,20 @@
-"""Calibration + uncertainty head — every factory model ships knowing when
+"""Calibration + uncertainty head - every factory model ships knowing when
 it doesn't know.
 
 A trained classifier's raw confidences lie (typically overconfident). This
 module fits two things on the validation split and embeds them in the ONNX
 metadata so they travel WITH the artifact:
 
-* **temperature** — a single scalar T dividing the logits before softmax,
+* **temperature** - a single scalar T dividing the logits before softmax,
   fitted to minimize validation NLL (grid search: dependency-free, exact
   enough for one parameter). ECE before/after is recorded so the effect is
   auditable.
-* **conformal abstain threshold** — the split-conformal (1 − alpha)
+* **conformal abstain threshold** - the split-conformal (1 − alpha)
   quantile of validation nonconformity (1 − calibrated max-probability).
   At inference, nonconformity above the threshold ⇒ ABSTAIN; under
   exchangeability, accepted predictions err at most ~alpha of the time.
 
-``EdgeModel`` reads the same metadata and exposes the abstain decision —
+``EdgeModel`` reads the same metadata and exposes the abstain decision - 
 the "guarantee handshake": the model + its honesty contract are one file.
 """
 from __future__ import annotations
@@ -71,7 +71,7 @@ def fit_temperature(
     grid: Sequence[float] | None = None,
 ) -> float:
     """Single-parameter grid search minimizing validation NLL. The grid is
-    log-spaced over [0.05, 10] — wide enough for badly miscalibrated heads
+    log-spaced over [0.05, 10] - wide enough for badly miscalibrated heads
     in either direction."""
     if grid is None:
         grid = np.logspace(math.log10(0.05), math.log10(10.0), 120)
@@ -104,7 +104,7 @@ def calibrate_classification(
 ) -> dict[str, Any]:
     """Fit temperature + conformal threshold on the validation split.
 
-    Returns the metadata block the artifact ships with. Never raises —
+    Returns the metadata block the artifact ships with. Never raises - 
     on any failure returns ``{"calibrated": False, "error": ...}`` so the
     pipeline keeps going and the artifact honestly says it's uncalibrated.
     """
@@ -141,6 +141,6 @@ def calibrate_classification(
             "ece_after": round(ece(cal_conf.tolist(), cal_correct.tolist()), 4),
             "val_samples": int(len(labels)),
         }
-    except Exception as exc:  # noqa: BLE001 — calibration must not kill the run
+    except Exception as exc:  # noqa: BLE001 - calibration must not kill the run
         logger.warning("calibration failed: %s", exc)
         return {"calibrated": False, "error": str(exc)}

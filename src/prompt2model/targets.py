@@ -1,9 +1,9 @@
-"""Pluggable deployment targets — the factory compiles to a TARGET, not a box.
+"""Pluggable deployment targets - the factory compiles to a TARGET, not a box.
 
 ONNX Runtime is the universal backend: every artifact the factory emits runs
 there unmodified. Accelerator-specific backends (TensorRT first) are one
 registry entry each: they take the final ONNX artifact and produce whatever
-that runtime needs — building it on the spot when the toolchain is present,
+that runtime needs - building it on the spot when the toolchain is present,
 otherwise emitting a reproducible build recipe to run on the target device.
 A Jetson is ONE choice here, not an assumption.
 
@@ -43,7 +43,7 @@ class TargetArtifact:
 
 class ExportTarget:
     """One deployment backend. ``prepare`` must never raise into the
-    pipeline — a failed build returns a not-built artifact with notes."""
+    pipeline - a failed build returns a not-built artifact with notes."""
 
     name = "abstract"
 
@@ -69,7 +69,7 @@ class OnnxRuntimeTarget(ExportTarget):
                 built=True,
                 notes="runs anywhere ONNX Runtime runs (CPU/GPU/NPU EPs)",
             )
-        except Exception as exc:  # noqa: BLE001 — never raise into the pipeline
+        except Exception as exc:  # noqa: BLE001 - never raise into the pipeline
             return TargetArtifact(
                 target=self.name,
                 runtime="onnxruntime",
@@ -144,7 +144,7 @@ class TensorRTTarget(ExportTarget):
                 artifact_path=str(onnx_path),
                 built=False,
                 recipe_path=str(recipe_path),
-                notes="trtexec not found on this host — run build_tensorrt.sh on the target device",
+                notes="trtexec not found on this host - run build_tensorrt.sh on the target device",
             )
 
         try:
@@ -210,11 +210,11 @@ register_target("tensorrt", TensorRTTarget())
 
 def resolve_target(name: str | None) -> ExportTarget:
     """Deployment-target string → backend. Unknown names get the universal
-    ONNX Runtime target (with a log line), never an error — the factory
+    ONNX Runtime target (with a log line), never an error - the factory
     always produces something deployable."""
     key = (name or "onnxruntime").strip().lower()
     canonical = _ALIASES.get(key)
     if canonical is None:
-        logger.warning("unknown deployment target %r — using onnxruntime", name)
+        logger.warning("unknown deployment target %r - using onnxruntime", name)
         canonical = "onnxruntime"
     return _TARGETS[canonical]

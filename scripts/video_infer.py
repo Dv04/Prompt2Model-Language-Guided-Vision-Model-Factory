@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""video_infer.py — Edge-inference script for Prompt2Model ONNX exports on Video streams."""
+"""video_infer.py - Edge-inference script for Prompt2Model ONNX exports on Video streams."""
 
 import argparse
 import json

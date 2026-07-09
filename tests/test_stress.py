@@ -1,4 +1,4 @@
-"""Week 8 — Venkata: Stress tests for budget enforcement and reliability."""
+"""Week 8 - Venkata: Stress tests for budget enforcement and reliability."""
 
 import pytest
 import time

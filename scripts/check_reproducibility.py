@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""check_reproducibility.py — Verifies the project's reproducibility and health."""
+"""check_reproducibility.py - Verifies the project's reproducibility and health."""
 
 import sys
 import subprocess

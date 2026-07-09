@@ -1,4 +1,4 @@
-"""Week 5 — Dev: Tests for the cosine similarity matrix computation."""
+"""Week 5 - Dev: Tests for the cosine similarity matrix computation."""
 
 from prompt2model.config import RequestedLabel
 from prompt2model.label_resolution import LabelResolver, SimilarityMatrix

@@ -1,4 +1,4 @@
-"""Week 6 — Madhuvani: Zero-configuration edge inference script.
+"""Week 6 - Madhuvani: Zero-configuration edge inference script.
 
 Uses only ONNX Runtime and embedded metadata to run inference.
 """
@@ -25,7 +25,7 @@ class EdgeModel:
         self.mean = np.array(json.loads(self.metadata.get("normalization_mean", "[0.485, 0.456, 0.406]")), dtype=np.float32)
         self.std = np.array(json.loads(self.metadata.get("normalization_std", "[0.229, 0.224, 0.225]")), dtype=np.float32)
         self.labels = json.loads(self.metadata.get("labels", "[]"))
-        # B1 phase 4 — the calibration block the factory embedded (may be
+        # B1 phase 4 - the calibration block the factory embedded (may be
         # absent on artifacts from older runs → uncalibrated behaviour).
         try:
             self.calibration = json.loads(self.metadata.get("calibration", "{}") or "{}")
@@ -53,7 +53,7 @@ class EdgeModel:
 
         When the artifact carries a calibration block, logits are
         temperature-scaled and the conformal threshold yields ``abstained``
-        — the model says "I don't know" instead of guessing. Passing a
+ - the model says "I don't know" instead of guessing. Passing a
         ``flywheel.HardCaseStore`` captures abstained/low-confidence frames
         for the retrain loop.
         """

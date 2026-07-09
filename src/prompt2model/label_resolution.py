@@ -267,7 +267,7 @@ class LabelResolver:
                     )
                 )
             else:
-                # No substring match at all — yield the first dataset label with zero score
+                # No substring match at all - yield the first dataset label with zero score
                 resolved.append(
                     ResolvedLabel(
                         requested_label=request.name,

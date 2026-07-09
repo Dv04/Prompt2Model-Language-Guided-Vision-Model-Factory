@@ -1,11 +1,11 @@
-"""Flywheel hook — the factory's models get better because they run.
+"""Flywheel hook - the factory's models get better because they run.
 
 When a deployed model abstains (conformal gate) or squeaks under a
 confidence floor, that frame is exactly the training data the NEXT version
 needs. :class:`HardCaseStore` captures those frames + a JSONL manifest;
 ``export_imagefolder`` turns them into retraining input; ``retrain_ready``
 is the trigger. Labeling/curation of the captured pool is deliberately out
-of scope here (that is the active-learning product, C1+C3) — this module is
+of scope here (that is the active-learning product, C1+C3) - this module is
 the capture half B1 owns: nothing captured, nothing to learn from.
 
 Bounded by construction: ``max_items`` caps the store (drop-newest, like
@@ -60,10 +60,10 @@ class HardCaseStore:
     ) -> Path | None:
         """Persist one hard case (JPEG + manifest row). Returns the image
         path, or None when the store is full / the image can't be saved.
-        Never raises — capture is best-effort by design."""
+        Never raises - capture is best-effort by design."""
         try:
             if self.count() >= self.max_items:
-                logger.debug("hard-case store full (%d) — dropping capture", self.max_items)
+                logger.debug("hard-case store full (%d) - dropping capture", self.max_items)
                 return None
             stamp = f"{time.time():.6f}".replace(".", "_")
             image_path = self.root / f"hard_{stamp}.jpg"
@@ -144,9 +144,9 @@ class HardCaseStore:
         """Materialize the pool as an imagefolder for the retrain step.
 
         Default: everything under ``unlabeled/`` (hard cases need human or
-        active-learning labels — that's the C-track's job). ``pseudo_label``
+        active-learning labels - that's the C-track's job). ``pseudo_label``
         buckets by the model's own prediction instead: cheap, biased, useful
-        only for semi-supervised recipes — the manifest keeps the provenance
+        only for semi-supervised recipes - the manifest keeps the provenance
         either way.
         """
         output_dir = Path(output_dir)

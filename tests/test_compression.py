@@ -110,7 +110,7 @@ def test_apply_compression_refusal_keeps_uncompressed(tmp_path):
         CompressionConfig(enable_quantization=True),
         ModelConstraints(accuracy_floor=1.0),
     )
-    # (Unless the tiny net is accidentally perfect on random labels — with 16
+    # (Unless the tiny net is accidentally perfect on random labels - with 16
     # random labels the chance is negligible; guard anyway.)
     if report.compressed_val_accuracy is not None and report.compressed_val_accuracy < 1.0:
         assert report.passed is False
