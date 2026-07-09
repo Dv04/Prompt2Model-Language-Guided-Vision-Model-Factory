@@ -1,5 +1,5 @@
 """LLM planner front end: schema validation, repair loop, fallback, overlay,
-and constraint-driven model selection. No network — transports are fakes."""
+and constraint-driven model selection. No network - transports are fakes."""
 from __future__ import annotations
 
 import json
@@ -96,7 +96,7 @@ def test_unconfigured_planner_raises():
 
 
 def test_no_think_marker_is_opt_in():
-    # Measured: the "/no_think" prompt marker DERAILS qwen3.5 — it must
+    # Measured: the "/no_think" prompt marker DERAILS qwen3.5 - it must
     # never ride the prompt unless explicitly requested.
     transport = _FakeTransport(json.dumps(GOOD_PLAN))
     LLMPlanner(transport=transport, no_think=True).plan(PROMPT)
@@ -114,7 +114,7 @@ def test_think_blocks_are_stripped():
 
 def test_api_flavor_request_shapes(monkeypatch):
     """Explicit flavors hit the right URL with the right body + parse the
-    right response shape — no network (urlopen is stubbed)."""
+    right response shape - no network (urlopen is stubbed)."""
     import io
     import urllib.request as _url
 

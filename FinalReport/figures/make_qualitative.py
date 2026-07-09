@@ -43,7 +43,7 @@ for j, ex in enumerate(examples):
 for ax_row, label in zip(axes, ["clean test image", "low-light + predictions"]):
     ax_row[0].set_ylabel(label, fontsize=8)
 plt.suptitle(
-    "Beans qualitative comparison — Fixed (ImageNet preprocessing) vs Guided (low-light recipe)",
+    "Beans qualitative comparison - Fixed (ImageNet preprocessing) vs Guided (low-light recipe)",
     fontsize=9,
 )
 plt.tight_layout(rect=[0, 0, 1, 0.95])

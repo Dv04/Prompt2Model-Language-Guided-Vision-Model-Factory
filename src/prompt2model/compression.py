@@ -1,4 +1,4 @@
-"""Compression stage — distill → quantize → accuracy-floor gate.
+"""Compression stage - distill → quantize → accuracy-floor gate.
 
 The factory's promise is not "a smaller model", it is "a smaller model OR a
 refusal": every compressed artifact is evaluated on the validation split in
@@ -8,15 +8,15 @@ gate result travels with the artifact (ONNX metadata + run report).
 
 Pieces:
 
-* :func:`train_distilled_classification` — knowledge distillation for the
+* :func:`train_distilled_classification` - knowledge distillation for the
   classification path: soft-target KL (temperature-scaled) + hard-label CE.
   Teacher is trained (or loaded) from the registry's accuracy tier.
-* :func:`quantize_onnx` — INT8 post-training quantization of an exported
+* :func:`quantize_onnx` - INT8 post-training quantization of an exported
   ONNX file via onnxruntime.quantization (dynamic = weights-only, works
   anywhere; static = activation calibration from the validation loader).
-* :func:`evaluate_onnx_classification` — accuracy of an ONNX file over a
+* :func:`evaluate_onnx_classification` - accuracy of an ONNX file over a
   torch DataLoader, run through ONNX Runtime (the honest, same-runtime gate).
-* :func:`decide_gate` / :func:`apply_compression` — the floor decision and
+* :func:`decide_gate` / :func:`apply_compression` - the floor decision and
   the orchestration.
 """
 from __future__ import annotations
@@ -50,7 +50,7 @@ def train_distilled_classification(
 
     loss = alpha * T^2 * KL(student_T || teacher_T) + (1 - alpha) * CE
 
-    Returns a dict with checkpoint_path, history and best_val_accuracy —
+    Returns a dict with checkpoint_path, history and best_val_accuracy - 
     intentionally the same shape the reporting layer already understands.
     """
     import torch
@@ -188,7 +188,7 @@ def quantize_onnx(
 
 def evaluate_onnx_classification(onnx_path: str | Path, loader: Any) -> float:
     """Accuracy of an ONNX classifier over a torch DataLoader, computed in
-    ONNX Runtime — the same runtime the artifact ships in."""
+    ONNX Runtime - the same runtime the artifact ships in."""
     import numpy as np
     import onnxruntime as ort
 
@@ -300,7 +300,7 @@ def apply_compression(
     reason = (
         "compressed artifact holds the accuracy floor"
         if passed
-        else "REFUSED: compressed artifact fell below the accuracy floor — shipping uncompressed"
+        else "REFUSED: compressed artifact fell below the accuracy floor - shipping uncompressed"
     )
     return CompressionReport(
         attempted=True,

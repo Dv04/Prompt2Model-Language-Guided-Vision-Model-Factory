@@ -61,7 +61,7 @@ _PARAMS_MILLIONS: dict[str, float] = {
 }
 
 # Latency envelopes (ms) that hard-cap the tier regardless of the stated
-# priority: a "prioritize accuracy, under 25 ms" prompt gets the speed tier —
+# priority: a "prioritize accuracy, under 25 ms" prompt gets the speed tier - 
 # the stated constraint wins over the stated preference.
 _LATENCY_SPEED_MS = 30
 _LATENCY_BALANCED_MS = 80
@@ -75,7 +75,7 @@ _TIER_ORDER = (PriorityPreset.ACCURACY, PriorityPreset.BALANCED, PriorityPreset.
 def recommend_model(task: TaskType, constraints: ModelConstraints) -> str:
     """Constraint-driven model selection: priority sets the starting tier,
     hard constraints (latency / power / parameter cap) can only push it DOWN
-    toward smaller models — never up."""
+    toward smaller models - never up."""
     priority = constraints.priority
 
     def _tier_index(p: PriorityPreset) -> int:

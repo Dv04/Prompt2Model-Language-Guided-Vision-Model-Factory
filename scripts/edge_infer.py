@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""edge_infer.py — Autonomous edge-inference script for Prompt2Model ONNX exports.
+"""edge_infer.py - Autonomous edge-inference script for Prompt2Model ONNX exports.
 
 This script is entirely SELF-CONTAINED.  It does NOT import anything from the
 ``prompt2model`` package.  All preprocessing parameters (input resolution,
@@ -9,7 +9,7 @@ embedded inside the ``.onnx`` file via ``onnxruntime.InferenceSession`` and
 
 Usage examples
 --------------
-# Run with a real image (classification or detection — task auto-detected):
+# Run with a real image (classification or detection - task auto-detected):
     python scripts/edge_infer.py --model output/smoke/classification_run/model.onnx \\
                                  --image path/to/image.png
 
@@ -26,10 +26,10 @@ Usage examples
 
 Exit codes
 ----------
-0   — inference completed successfully
-1   — model file not found or ONNX validation failed
-2   — image file not found
-3   — unexpected runtime error
+0 - inference completed successfully
+1 - model file not found or ONNX validation failed
+2 - image file not found
+3 - unexpected runtime error
 """
 
 from __future__ import annotations
@@ -190,7 +190,7 @@ def print_metadata(meta: dict[str, Any]) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Image preprocessing (uses ONLY embedded metadata — no external config)
+# Image preprocessing (uses ONLY embedded metadata - no external config)
 # ──────────────────────────────────────────────────────────────────────────────
 def preprocess_image(
     image_path: str,
@@ -247,7 +247,7 @@ def create_session(model_path: str) -> Any:
     available = [p.lower() for p in ort.get_available_providers()]
     if "cudaexecutionprovider" in available:
         providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        _warn("CUDA provider detected — using GPU (set ORT_DISABLE_CUDA=1 to force CPU)")
+        _warn("CUDA provider detected - using GPU (set ORT_DISABLE_CUDA=1 to force CPU)")
     return ort.InferenceSession(model_path, providers=providers)
 
 
@@ -379,7 +379,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Autonomous edge-inference script for Prompt2Model ONNX exports.\n"
             "All configuration is read exclusively from metadata embedded in the\n"
-            ".onnx file — no external config files or prompt2model package needed."
+            ".onnx file - no external config files or prompt2model package needed."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -518,7 +518,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"    Task     : {task}")
     print(f"    Input    : {mode_str}")
     print(f"    Latency  : {latency_ms:.2f} ms")
-    print(f"    Config   : 100% from embedded ONNX metadata — no external files used")
+    print(f"    Config   : 100% from embedded ONNX metadata - no external files used")
     print()
     _ok("Autonomous edge-inference completed successfully.")
     print()

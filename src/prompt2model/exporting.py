@@ -41,15 +41,15 @@ def build_metadata_props(
 
     Keys injected
     -------------
-    task              : str   — "classification" or "detection"
-    prompt            : str   — the original natural-language prompt
-    model_name        : str   — backbone identifier chosen by the pipeline
-    input_resolution  : list  — [height, width] in pixels (square images)
-    mean              : list  — [R, G, B] per-channel normalisation mean
-    std               : list  — [R, G, B] per-channel normalisation std
-    class_dict        : dict  — {"0": "cat", "1": "dog", …}  (str keys for JSON)
-    labels            : list  — flat list of dataset class names (legacy / convenience)
-    label_map         : dict  — {"requested_label": "dataset_label", …} from resolver
+    task              : str - "classification" or "detection"
+    prompt            : str - the original natural-language prompt
+    model_name        : str - backbone identifier chosen by the pipeline
+    input_resolution  : list - [height, width] in pixels (square images)
+    mean              : list - [R, G, B] per-channel normalisation mean
+    std               : list - [R, G, B] per-channel normalisation std
+    class_dict        : dict - {"0": "cat", "1": "dog", …}  (str keys for JSON)
+    labels            : list - flat list of dataset class names (legacy / convenience)
+    label_map         : dict - {"requested_label": "dataset_label", …} from resolver
     """
     class_dict: dict[str, str] = {str(i): name for i, name in enumerate(class_names)}
     label_map: dict[str, str] = {

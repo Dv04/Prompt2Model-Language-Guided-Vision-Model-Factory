@@ -60,7 +60,7 @@ def _extract_latency_ms(prompt: str) -> int | None:
 
 
 def _extract_accuracy_floor(prompt: str) -> float | None:
-    """The prompt's absolute accuracy floor ("keep at least 70% accuracy") — a
+    """The prompt's absolute accuracy floor ("keep at least 70% accuracy") - a
     contract term the gate must receive; previously only the LLM planner set it."""
     normalized = prompt.lower()
     match = re.search(

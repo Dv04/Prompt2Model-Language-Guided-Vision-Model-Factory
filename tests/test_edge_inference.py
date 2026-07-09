@@ -1,4 +1,4 @@
-"""Week 6 — Madhuvani: Tests for zero-configuration edge inference."""
+"""Week 6 - Madhuvani: Tests for zero-configuration edge inference."""
 
 import json
 from pathlib import Path

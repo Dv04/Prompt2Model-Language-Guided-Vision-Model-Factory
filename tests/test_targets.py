@@ -28,7 +28,7 @@ def test_resolve_aliases():
     assert resolve_target("jetson").name == "tensorrt"
     assert resolve_target("TRT").name == "tensorrt"
     assert resolve_target("orin").name == "tensorrt"
-    # Unknown targets never error — universal fallback.
+    # Unknown targets never error - universal fallback.
     assert resolve_target("quantum-npu-9000").name == "onnxruntime"
 
 
@@ -75,7 +75,7 @@ def test_tensorrt_target_builds_with_fake_trtexec(tmp_path, monkeypatch):
         'touch "${arg#--saveEngine=}";; esac; done\n'
     )
     fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
-    # Fake bin FIRST, but keep the system dirs — the fake script needs `touch`.
+    # Fake bin FIRST, but keep the system dirs - the fake script needs `touch`.
     monkeypatch.setenv("PATH", f"{bin_dir}:/usr/bin:/bin")
 
     onnx_path = _export_tiny_onnx(tmp_path / "m.onnx")

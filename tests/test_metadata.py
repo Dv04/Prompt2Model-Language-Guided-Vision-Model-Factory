@@ -73,7 +73,7 @@ def _make_minimal_onnx(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Test 1 — all required keys are present for classification
+# Test 1 - all required keys are present for classification
 # ---------------------------------------------------------------------------
 
 def test_build_metadata_props_classification_has_all_keys() -> None:
@@ -92,7 +92,7 @@ def test_build_metadata_props_classification_has_all_keys() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 2 — values are correct for classification
+# Test 2 - values are correct for classification
 # ---------------------------------------------------------------------------
 
 def test_build_metadata_props_classification_values() -> None:
@@ -111,7 +111,7 @@ def test_build_metadata_props_classification_values() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 3 — custom normalisation overrides propagate correctly
+# Test 3 - custom normalisation overrides propagate correctly
 # ---------------------------------------------------------------------------
 
 def test_build_metadata_props_custom_norm() -> None:
@@ -125,7 +125,7 @@ def test_build_metadata_props_custom_norm() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 4 — label_map reflects the resolver's resolved labels correctly
+# Test 4 - label_map reflects the resolver's resolved labels correctly
 # ---------------------------------------------------------------------------
 
 def test_build_metadata_props_label_map_reflects_resolver() -> None:
@@ -143,7 +143,7 @@ def test_build_metadata_props_label_map_reflects_resolver() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 5 — inject → read round-trip preserves all metadata faithfully
+# Test 5 - inject → read round-trip preserves all metadata faithfully
 # ---------------------------------------------------------------------------
 
 def test_inject_and_read_roundtrip(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-"""Weeks 9–10 — Dev: Tests for the Language-to-Config ablation suite."""
+"""Weeks 9-10 - Dev: Tests for the Language-to-Config ablation suite."""
 
 from prompt2model.ablation import AblationSuite
 

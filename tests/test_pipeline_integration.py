@@ -1,4 +1,4 @@
-"""Week 7 — Integration: End-to-end pipeline test.
+"""Week 7 - Integration: End-to-end pipeline test.
 
 Validates the complete handshake between parsing, HPO, training,
 enhanced metadata export, and edge verification.
@@ -31,7 +31,7 @@ def test_full_pipeline_integration(tmp_path: str) -> None:
     config.training.max_steps_per_epoch = 2
     config.export.output_dir = str(tmp / "output")
 
-    # 4. Run Pipeline (HPO explicitly enabled — hpo_info is None otherwise)
+    # 4. Run Pipeline (HPO explicitly enabled - hpo_info is None otherwise)
     result = factory.run(config, enable_hpo=True)
 
     # 5. Verify Handshake

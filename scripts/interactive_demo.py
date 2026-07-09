@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""interactive_demo.py — A fully interactive, styled presentation script."""
+"""interactive_demo.py - A fully interactive, styled presentation script."""
 
 import sys
 import time

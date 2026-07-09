@@ -118,7 +118,7 @@ class Prompt2ModelFactory:
             )
 
             if enable_hpo:
-                # Run Optuna HPO — respects budget_minutes from the parsed prompt
+                # Run Optuna HPO - respects budget_minutes from the parsed prompt
                 from prompt2model.hpo import run_hpo
                 hpo_result = run_hpo(
                     model_name=config.model_name or "mobilenet_v3_small",
@@ -157,7 +157,7 @@ class Prompt2ModelFactory:
                     model, bundle.train_loader, bundle.val_loader, config.training, run_dir, device
                 )
 
-            # Compression stage 1 — knowledge distillation (opt-in): a
+            # Compression stage 1 - knowledge distillation (opt-in): a
             # bigger teacher from the registry's accuracy tier fine-tunes the
             # already-trained student via temperature-scaled soft targets.
             if config.compression.enable_distillation:
@@ -208,7 +208,7 @@ class Prompt2ModelFactory:
             sample_batch, _ = next(iter(bundle.test_loader))
             benchmark = benchmark_model(model, sample_batch[:1], device=device)
 
-            # Phase 4 — calibration + conformal abstain threshold, fitted on
+            # Phase 4 - calibration + conformal abstain threshold, fitted on
             # the validation split. Ships in the artifact metadata; EdgeModel
             # applies it at inference (the guarantee handshake).
             from prompt2model.calibration import calibrate_classification
@@ -226,7 +226,7 @@ class Prompt2ModelFactory:
             model_name = config.model_name or "fasterrcnn_mobilenet_v3_large_320_fpn"
 
             if is_yolo_model(model_name):
-                # YOLO / RT-DETR path — uses ultralytics native training
+                # YOLO / RT-DETR path - uses ultralytics native training
                 training = train_yolo_model(
                     model_name=model_name,
                     dataset_config=config.dataset,
@@ -342,7 +342,7 @@ class Prompt2ModelFactory:
                 onnx_path = None
                 verification = None
 
-        # Compression stage 2 — quantize + accuracy-floor gate, evaluated in
+        # Compression stage 2 - quantize + accuracy-floor gate, evaluated in
         # ONNX Runtime (the runtime the artifact ships in). The gate REFUSES
         # to ship a compressed model below the floor; the report says why.
         compression_info: dict[str, Any] | None = None
@@ -369,11 +369,11 @@ class Prompt2ModelFactory:
             else:
                 compression_info = {
                     "attempted": False,
-                    "reason": "detection quantization is not accuracy-gated yet — skipped",
+                    "reason": "detection quantization is not accuracy-gated yet - skipped",
                 }
                 metrics["compression"] = compression_info
 
-        # Phase 3 — deployment target: compile the final artifact for the
+        # Phase 3 - deployment target: compile the final artifact for the
         # requested runtime. ONNX Runtime is universal; accelerator targets
         # (TensorRT, ...) build locally when the toolchain exists, else emit
         # a reproducible build recipe to run on the device.

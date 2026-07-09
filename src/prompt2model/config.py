@@ -146,12 +146,12 @@ class CompressionConfig(BaseModel):
     quantization_mode: str = "dynamic"  # "dynamic" | "static"
     enable_distillation: bool = False
     # Teacher for distillation: a registry model name (trained on the same
-    # data as part of the run) — defaults to the accuracy tier for the task.
+    # data as part of the run) - defaults to the accuracy tier for the task.
     distillation_teacher: str | None = None
     distillation_temperature: float = 4.0
     distillation_alpha: float = 0.7  # weight of the soft (teacher) loss
     # The compressed artifact must retain at least this fraction of the
-    # uncompressed model's validation accuracy — else the factory REFUSES to
+    # uncompressed model's validation accuracy - else the factory REFUSES to
     # ship it and keeps the uncompressed artifact. An absolute floor can
     # additionally come from ModelConstraints.accuracy_floor.
     accuracy_floor_relative: float = 0.98

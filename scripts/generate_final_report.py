@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""generate_final_report.py — Aggregates telemetry data into a final project report."""
+"""generate_final_report.py - Aggregates telemetry data into a final project report."""
 
 import csv
 import json

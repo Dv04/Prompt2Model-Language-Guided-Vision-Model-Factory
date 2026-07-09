@@ -1,4 +1,4 @@
-"""LLM planner front end — natural-language intent → validated typed spec.
+"""LLM planner front end - natural-language intent → validated typed spec.
 
 The regex parser (``parsing.parse_prompt``) is fast and dependency-free but
 brittle: it misses labels phrased indirectly, can't read "never miss a single
@@ -21,7 +21,7 @@ Design rules:
 * **Overlay, never replace.** The regex parse always produces a complete
   config; the planner only overrides fields it actually extracted (non-null).
   A half-answer from a small model can't hole the config.
-* **Any OpenAI-compatible endpoint.** ``/v1/chat/completions`` — works with
+* **Any OpenAI-compatible endpoint.** ``/v1/chat/completions`` - works with
   Ollama, vLLM, OpenAI, llama.cpp server, etc. Configured via
   ``P2M_LLM_ENDPOINT`` / ``P2M_LLM_MODEL`` (or constructor args). Transport
   is injectable for tests: no network, no new dependencies (urllib only).
@@ -61,11 +61,11 @@ ENV_TIMEOUT = "P2M_LLM_TIMEOUT"
 # the real `think: false` switch (default on). Set to 0 to let the model think.
 ENV_NOTHINK = "P2M_LLM_NOTHINK"
 # OPT-IN prompt-level "/no_think" marker for OpenAI-flavor endpoints serving
-# qwen3-CLASS models. Off by default — measured on qwen3.5 the marker
+# qwen3-CLASS models. Off by default - measured on qwen3.5 the marker
 # DERAILS generation (16.9 s plain vs indefinite stall with it appended).
 ENV_NOTHINK_MARKER = "P2M_LLM_NOTHINK_MARKER"
 # API flavor: "openai" (any /v1/chat/completions server), "ollama" (native
-# /api/chat — gives a REAL think:false switch + json mode; measured 8.6 s vs
+# /api/chat - gives a REAL think:false switch + json mode; measured 8.6 s vs
 # 100 s+ timeout for the same qwen3.5 planning call through the compat
 # layer, which ignores the prompt-level /no_think), or "auto" (probe once).
 ENV_FLAVOR = "P2M_LLM_FLAVOR"
@@ -112,7 +112,7 @@ class PlannerOutput(BaseModel):
 
 _SYSTEM_PROMPT = """\
 You turn a user's plain-language request for a vision model into ONE JSON \
-object and nothing else — no prose, no markdown fences.
+object and nothing else - no prose, no markdown fences.
 
 Schema (every field may be null when the request does not state it):
 {
@@ -142,7 +142,7 @@ Rules:
 
 
 def _strip_fences(text: str) -> str:
-    # Some servers inline the thinking phase into content — drop it first.
+    # Some servers inline the thinking phase into content - drop it first.
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
     match = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL)
     if match:
@@ -202,7 +202,7 @@ class LLMPlanner:
                 ) as response:
                     if response.status == 200:
                         flavor = "ollama"
-            except Exception:  # noqa: BLE001 — not ollama (or unreachable)
+            except Exception:  # noqa: BLE001 - not ollama (or unreachable)
                 pass
             self._resolved_flavor = flavor
             logger.debug("planner endpoint flavor resolved: %s", flavor)
@@ -217,7 +217,7 @@ class LLMPlanner:
             return self._transport(messages)
         if not self.endpoint or not self.model:
             raise PlannerError(
-                f"LLM planner not configured — set {ENV_ENDPOINT} and {ENV_MODEL} "
+                f"LLM planner not configured - set {ENV_ENDPOINT} and {ENV_MODEL} "
                 "(an Ollama host or any OpenAI-compatible endpoint)."
             )
         if self._flavor() == "ollama":
@@ -349,7 +349,7 @@ def plan_prompt(
     - ``regex``: deterministic parser only (previous behaviour).
     - ``llm``: the LLM plan is required; PlannerError propagates.
     - ``auto``: use the LLM when one is configured, fall back to regex on any
-      planner failure — a config is always produced.
+      planner failure - a config is always produced.
     """
     config = parse_prompt(
         prompt, dataset=dataset, task_hint=task_hint, training_overrides=training_overrides
@@ -361,7 +361,7 @@ def plan_prompt(
     if not planner.is_configured:
         if mode == "llm":
             raise PlannerError(
-                f"mode='llm' but no planner configured — set {ENV_ENDPOINT} and {ENV_MODEL}."
+                f"mode='llm' but no planner configured - set {ENV_ENDPOINT} and {ENV_MODEL}."
             )
         return config
 

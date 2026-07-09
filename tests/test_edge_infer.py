@@ -63,7 +63,7 @@ FULL_META = {
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 1 — Metadata loading
+# 1 - Metadata loading
 # ──────────────────────────────────────────────────────────────────────────────
 
 def test_load_metadata_parses_all_keys(tmp_path: Path) -> None:
@@ -95,7 +95,7 @@ def test_load_metadata_dies_on_missing_required_key(tmp_path: Path) -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2 — Dummy input generation
+# 2 - Dummy input generation
 # ──────────────────────────────────────────────────────────────────────────────
 
 def test_make_dummy_input_shape_and_dtype() -> None:
@@ -117,7 +117,7 @@ def test_make_dummy_input_different_seeds_differ() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 3 — Real-image preprocessing (uses embedded resolution & norm stats)
+# 3 - Real-image preprocessing (uses embedded resolution & norm stats)
 # ──────────────────────────────────────────────────────────────────────────────
 
 def test_preprocess_image_shape_and_dtype(tmp_path: Path) -> None:
@@ -168,7 +168,7 @@ def test_preprocess_image_missing_file_exits_2() -> None:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 4 — Classification result interpretation
+# 4 - Classification result interpretation
 # ──────────────────────────────────────────────────────────────────────────────
 
 def test_interpret_classification_top1_is_highest_logit(capsys: pytest.CaptureFixture) -> None:
@@ -194,7 +194,7 @@ def test_interpret_classification_topk_limits_output(capsys: pytest.CaptureFixtu
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 5 — Detection result interpretation
+# 5 - Detection result interpretation
 # ──────────────────────────────────────────────────────────────────────────────
 
 def test_interpret_detection_filters_by_threshold(capsys: pytest.CaptureFixture) -> None:
@@ -234,12 +234,12 @@ def test_interpret_detection_no_detections_above_threshold(capsys: pytest.Captur
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 6 — Full end-to-end CLI invocation against smoke ONNX artifacts
+# 6 - Full end-to-end CLI invocation against smoke ONNX artifacts
 # ──────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.skipif(
     not SMOKE_CLS_ONNX.exists(),
-    reason="Smoke classification ONNX not found — run the pipeline first.",
+    reason="Smoke classification ONNX not found - run the pipeline first.",
 )
 def test_end_to_end_classification_dummy(capsys: pytest.CaptureFixture) -> None:
     """Run the full main() against the classification smoke ONNX with a dummy input."""
@@ -256,7 +256,7 @@ def test_end_to_end_classification_dummy(capsys: pytest.CaptureFixture) -> None:
 
 @pytest.mark.skipif(
     not SMOKE_DET_ONNX.exists(),
-    reason="Smoke detection ONNX not found — run the pipeline first.",
+    reason="Smoke detection ONNX not found - run the pipeline first.",
 )
 def test_end_to_end_detection_dummy(capsys: pytest.CaptureFixture) -> None:
     """Run the full main() against the detection smoke ONNX with a dummy input."""

@@ -17,7 +17,7 @@ from prompt2model.calibration import (
 
 def _synthetic_logits(n: int = 400, scale: float = 3.0, seed: int = 0):
     """Well-separated 2-class logits, then overconfidence-scaled by `scale`
-    — the classic miscalibration a fitted temperature should undo."""
+ - the classic miscalibration a fitted temperature should undo."""
     rng = np.random.default_rng(seed)
     labels = rng.integers(0, 2, n)
     base = rng.normal(0.0, 1.0, (n, 2))
@@ -27,7 +27,7 @@ def _synthetic_logits(n: int = 400, scale: float = 3.0, seed: int = 0):
 
 def test_fit_temperature_detects_overconfidence():
     """The NLL-optimal T is not exactly the injected scale (the pre-scale
-    logits aren't perfectly calibrated themselves) — the guarantees are:
+    logits aren't perfectly calibrated themselves) - the guarantees are:
     it detects overconfidence (T substantially > 1) and lowers NLL."""
     from prompt2model.calibration import _nll
 

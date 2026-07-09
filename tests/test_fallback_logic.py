@@ -1,4 +1,4 @@
-"""Week 6 — Dev: Tests for fallback label resolution logic."""
+"""Week 6 - Dev: Tests for fallback label resolution logic."""
 
 import logging
 from prompt2model.config import RequestedLabel
