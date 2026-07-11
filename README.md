@@ -1,25 +1,58 @@
 # Prompt2Model
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
 
 **[Live demo on Hugging Face Spaces](https://huggingface.co/spaces/Dhi-Technologies/prompt2model-demo)**
 &nbsp;|&nbsp;
 **[Example datasets](https://huggingface.co/datasets/Dhi-Technologies/prompt2model-examples)**
+&nbsp;|&nbsp;
+**[Reference ONNX model](https://huggingface.co/Dhi-Technologies/prompt2model-reference-onnx)**
 
-`Prompt2Model` is a week-4 integrated prototype for the course project "Prompt2Model: Language-Guided Vision Model Factory".
+[![Prompt2Model demo Space](assets/demo_space.png)](https://dhi-technologies-prompt2model-demo.static.hf.space/)
+
+*Screenshot of the live [evidence Space](https://dhi-technologies-prompt2model-demo.static.hf.space/), which republishes the numbers in this README with their exact commands and commits.*
+
+`Prompt2Model` is a language-guided vision model factory from Dhi Labs, built
+around a refusal gate: describe the model you want in plain language, and the
+factory returns a calibrated, exported, deployable vision model, or a
+documented refusal. A prompt becomes a typed dataset config, then a trained
+model, then a conformally calibrated model that can abstain on inputs it does
+not recognize, then a verified ONNX export, then an optional compressed
+variant that only ships if it clears an accuracy floor. The contract is not
+"a model, always." It is "a model you can trust, or an explicit, logged
+refusal."
 
 What is implemented:
 
-- Dev Sanghvi track: typed pipeline schema, deterministic prompt parser, augmentation mapping, CLIP-ready label resolver with lexical fallback
-- Venkata track: classification and COCO-style detection dataset loaders, lightweight model registry, training loops, augmentation injection
-- Madhuvani track: metric harness, ONNX export with metadata injection, ONNX verification, markdown evaluation report generation
-- B1 factory-compiler track (all opt-in, offline-first): an LLM planner front end, a distill → quantize → accuracy-floor compression gate, pluggable deployment targets, calibration + conformal abstain, and a flywheel hard-case store
+- A typed pipeline schema, deterministic prompt parser, augmentation mapping,
+  and a CLIP-ready label resolver with lexical fallback
+- Classification and COCO-style detection dataset loaders, a lightweight
+  model registry, training loops, and augmentation injection
+- A metric harness, ONNX export with metadata injection, ONNX verification,
+  and markdown evaluation report generation
+- A factory-compiler layer (all opt-in, offline-first): an LLM planner front
+  end, a distill -> quantize -> accuracy-floor compression gate, pluggable
+  deployment targets, calibration + conformal abstain, and a flywheel
+  hard-case store
 
 What is validated:
 
 - Classification path runs end-to-end on synthetic data: prompt -> config -> training -> metrics -> ONNX export -> report
-- Detection path is integrated through the week-4 milestone: prompt -> config -> COCO loader -> detector training/eval smoke test
+- Detection path is integrated end to end: prompt -> config -> COCO loader -> detector training/eval smoke test
+
+## Measured results
+
+Every number below comes from this repo's own committed evidence or the live
+evidence Space linked above; each row states exactly where to find it.
+
+| Metric | Result | Source |
+|---|---|---|
+| Full test suite | 118 passed, 0 errors, 0 failures | `.venv/bin/python -m pytest` at commit `34103b3`; junit summary `tests="118" errors="0" failures="0"`. Reproduced fresh on the demo Space. |
+| Calibrated conformal abstention threshold | `0.004888` (alpha=0.1, fit from 7 held-out validation samples) | `output/smoke_verify/classification_run/evaluation_report.md` -> `calibration.conformal_threshold` |
+| Classification demo set + OOD abstention | 36 committed synthetic images (12 red square / 12 blue circle / 12 green triangle); a synthetic random-noise image drives nonconformity to `0.030240`, past the `0.004888` threshold, and the model abstains | `prompt2model-examples` dataset on Hugging Face; demo Space's synthetic out-of-distribution abstain check |
+| Quantization accuracy-floor gate | PASSED: 74.0% size reduction (16.02 MB -> 4.16 MB) with the 0.98 relative-accuracy floor held | `output/quant_verify/evaluation_report.md` / `telemetry.json` -> `compression` block |
+| Deterministic smoke-test classification | accuracy 1.0, macro F1 1.0 - a toy reference sanity check on the synthetic shape set, not a benchmark claim | `output/smoke_verify/classification_run/evaluation_report.md` |
 
 ## Architecture
 
@@ -65,7 +98,7 @@ the fully validated path for those stages).
 
 - `src/prompt2model/`: package source
 - `tests/`: smoke tests and unit tests
-- `latex/`: proposal PDF and LaTeX source
+- `latex/`: project write-ups (PDF + LaTeX source)
 - `docs/`: project package PDF and generated markdown notes
 
 ## Environment
@@ -326,5 +359,15 @@ for semi-supervised recipes, with provenance kept in the manifest either way.
 
 - CLIP-based label resolution is implemented behind a lazy loader. It falls back to lexical matching if the CLIP model is unavailable.
 - The default augmentation backend is torchvision-native for stability. The module boundary is ready for an Albumentations adapter later.
-- Detection ONNX export is present as a best-effort wrapper, but the fully validated export path in this milestone is classification.
+- Detection ONNX export is present as a best-effort wrapper, but the fully validated export path today is classification.
 - Compression, deployment-target compilation, calibration, and flywheel capture are documented above for classification; detection support follows the same interfaces where applicable but is not yet the validated path for those stages.
+
+## License
+
+Research, academic, and personal use permitted; commercial use requires a
+commercial license, contact [hello@dhi-tech.com](mailto:hello@dhi-tech.com).
+
+This repository is licensed under the
+[PolyForm Noncommercial License 1.0.0](LICENSE). The v0.1.0 release was
+published under MIT and that grant stands for that snapshot; versions after
+v0.1.0 are licensed PolyForm Noncommercial 1.0.0.

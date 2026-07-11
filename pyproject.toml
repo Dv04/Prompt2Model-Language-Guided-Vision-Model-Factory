@@ -5,8 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "prompt2model"
 version = "0.1.0"
-description = "Language-guided vision model factory prototype"
+description = "Language-guided vision model factory with built-in refusal gates"
 readme = "README.md"
+license = { text = "PolyForm-Noncommercial-1.0.0" }
 requires-python = ">=3.12"
 dependencies = [
   "pydantic>=2.12",
