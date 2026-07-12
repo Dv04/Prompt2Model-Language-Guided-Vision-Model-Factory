@@ -1,0 +1,34 @@
+name: CI
+
+# Runs the full pytest suite on pushes to main and on pull requests.
+# The suite is CPU-only: all model tests use synthetic/toy data, the LLM
+# planner tests use fake transports (no network), and any test that needs
+# a pre-built ONNX smoke artifact skips itself when that artifact is
+# missing. Confirmed locally: 118 passed in about 6m 25s on CPU.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+
+      - name: Run tests
+        run: python -m pytest
