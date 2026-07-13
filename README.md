@@ -48,11 +48,25 @@ evidence Space linked above; each row states exactly where to find it.
 
 | Metric | Result | Source |
 |---|---|---|
-| Full test suite | 118 passed, 0 errors, 0 failures | `.venv/bin/python -m pytest` at commit `34103b3`; junit summary `tests="118" errors="0" failures="0"`. Reproduced fresh on the demo Space. |
+| Full test suite | 118 passed, 0 errors, 0 failures | `.venv/bin/python -m pytest` at commit `6c0af43`; verbatim final summary line: `118 passed, 68 warnings in 133.19s (0:02:13)`. Reproduced fresh on the demo Space. |
 | Calibrated conformal abstention threshold | `0.004888` (alpha=0.1, fit from 7 held-out validation samples) | `output/smoke_verify/classification_run/evaluation_report.md` -> `calibration.conformal_threshold` |
 | Classification demo set + OOD abstention | 36 committed synthetic images (12 red square / 12 blue circle / 12 green triangle); a synthetic random-noise image drives nonconformity to `0.030240`, past the `0.004888` threshold, and the model abstains | `prompt2model-examples` dataset on Hugging Face; demo Space's synthetic out-of-distribution abstain check |
 | Quantization accuracy-floor gate | PASSED: 74.0% size reduction (16.02 MB -> 4.16 MB) with the 0.98 relative-accuracy floor held | `output/quant_verify/evaluation_report.md` / `telemetry.json` -> `compression` block |
 | Deterministic smoke-test classification | accuracy 1.0, macro F1 1.0 - a toy reference sanity check on the synthetic shape set, not a benchmark claim | `output/smoke_verify/classification_run/evaluation_report.md` |
+
+## Limitations
+
+- The classification path is validated end to end (prompt -> config ->
+  training -> metrics -> ONNX export -> report) only on synthetic/toy data
+  (the shape-based set produced by `generate-toy-data`). No real-image
+  dataset has been run through it yet.
+- No real-image benchmark exists anywhere in this repo. The `118 passed`
+  test suite and the measured-results table above are synthetic-data and
+  unit-level evidence, not a real-world accuracy benchmark.
+- The detection path is integrated (prompt -> config -> COCO loader ->
+  detector training/eval smoke test), but its compression, calibration, and
+  deployment-target stages are not yet fully validated the way the
+  classification path is.
 
 ## Architecture
 
