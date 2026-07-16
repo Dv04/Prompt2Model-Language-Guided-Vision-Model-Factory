@@ -1,5 +1,10 @@
 # Prompt2Model
 
+[![Commercial license](https://img.shields.io/badge/commercial_license-self--serve-8a3b1f)](https://dhi-tech.com/buy/prompt2model) [![Published pricing](https://img.shields.io/badge/pricing-published-2ea44f)](https://dhi-tech.com/pricing/)
+
+> Free for research and evaluation. Production and commercial use is licensed self-serve, with all prices published at [dhi-tech.com/pricing](https://dhi-tech.com/pricing/).
+
+
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
 
