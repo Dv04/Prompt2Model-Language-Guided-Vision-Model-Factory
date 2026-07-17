@@ -243,11 +243,17 @@ def compute_floor(
     compression: CompressionConfig,
     constraints: ModelConstraints,
 ) -> float:
-    """The accuracy the compressed artifact must reach: the stricter of the
-    relative retention floor and any absolute floor stated in the prompt."""
-    relative = compression.accuracy_floor_relative * baseline_accuracy
-    absolute = constraints.accuracy_floor or 0.0
-    return max(relative, absolute)
+    """The accuracy the compressed artifact must reach.
+
+    An explicitly stated absolute floor (``constraints.accuracy_floor``, the
+    user's contract term) is authoritative when present: it is used as is,
+    whether it is looser or stricter than the retention default. Only when
+    the user stated no floor does the relative retention default
+    (``accuracy_floor_relative`` times baseline) apply.
+    """
+    if constraints.accuracy_floor is not None:
+        return constraints.accuracy_floor
+    return compression.accuracy_floor_relative * baseline_accuracy
 
 
 def decide_gate(
