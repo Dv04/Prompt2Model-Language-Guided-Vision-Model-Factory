@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import numpy as np
 
-ROOT = Path("/Users/apple/Prompt2Model-Language-Guided-Vision-Model-Factory")
+ROOT = Path("/Users/apple/DHI/products/prompt2model")
 EX_DIR = ROOT / "data/report_eval/beans_benchmark/examples"
 META = json.loads((ROOT / "data/report_eval/beans_benchmark/metrics.json").read_text())
 examples = META["examples"]
