@@ -48,7 +48,7 @@ evidence Space linked above; each row states exactly where to find it.
 
 | Metric | Result | Source |
 |---|---|---|
-| Full test suite | 118 passed, 0 errors, 0 failures | `.venv/bin/python -m pytest` at commit `6c0af43`; verbatim final summary line: `118 passed, 68 warnings in 133.19s (0:02:13)`. Reproduced fresh on the demo Space. |
+| Full test suite | 119 passed, 0 errors, 0 failures | `.venv/bin/python -m pytest` on the 2026-07-23 working tree; verbatim final summary line: `119 passed in 83.63s (0:01:23)`. |
 | Calibrated conformal abstention threshold | `0.004888` (alpha=0.1, fit from 7 held-out validation samples) | `output/smoke_verify/classification_run/evaluation_report.md` -> `calibration.conformal_threshold` |
 | Classification demo set + OOD abstention | 36 committed synthetic images (12 red square / 12 blue circle / 12 green triangle); a synthetic random-noise image drives nonconformity to `0.030240`, past the `0.004888` threshold, and the model abstains | `prompt2model-examples` dataset on Hugging Face; demo Space's synthetic out-of-distribution abstain check |
 | Quantization accuracy-floor gate | PASSED: 74.0% size reduction (16.02 MB -> 4.16 MB) with the 0.98 relative-accuracy floor held | `output/quant_verify/evaluation_report.md` / `telemetry.json` -> `compression` block |
@@ -60,9 +60,10 @@ evidence Space linked above; each row states exactly where to find it.
   training -> metrics -> ONNX export -> report) only on synthetic/toy data
   (the shape-based set produced by `generate-toy-data`). No real-image
   dataset has been run through it yet.
-- No real-image benchmark exists anywhere in this repo. The `118 passed`
-  test suite and the measured-results table above are synthetic-data and
-  unit-level evidence, not a real-world accuracy benchmark.
+- The `119 passed` test suite and the general measured-results table above
+  are synthetic-data and unit-level evidence, not a real-world accuracy
+  benchmark. The Beans experiment in the compression section is a separate
+  held-out real-image validation result, scoped only to KD/ONNX quantization.
 - The detection path is integrated (prompt -> config -> COCO loader ->
   detector training/eval smoke test), but its compression, calibration, and
   deployment-target stages are not yet fully validated the way the
@@ -245,9 +246,13 @@ turn it on (keywords like "quantized int8" / "distilled", or `PlannerOutput.quan
   alpha `0.7`).
 - **Quantization** (`quantize_onnx`): INT8 post-training quantization of the
   exported ONNX file via `onnxruntime.quantization`. `dynamic` (default)
-  quantizes weights only and needs no calibration data; `static` additionally
-  calibrates activations from the validation loader
-  (`CompressionConfig.quantization_mode`).
+  intentionally limits QInt8 weight quantization to `MatMul` and `Gemm` and
+  needs no calibration data. `Conv` (including depthwise convolution) remains
+  FP32: blanket dynamic `ConvInteger` conversion is unsafe for the evaluated
+  MobileNetV3 backbone. `static` is a separate calibration-based path: it
+  calibrates weights and activations from the validation loader across the
+  full supported graph; it is not constrained to the dynamic `MatMul`/`Gemm`
+  scope (`CompressionConfig.quantization_mode`).
 - **The gate** (`decide_gate` / `apply_compression`): the compressed artifact
   is evaluated in ONNX Runtime - the SAME runtime it ships in - and compared
   against `max(accuracy_floor_relative * baseline_accuracy, constraints.accuracy_floor)`
@@ -259,6 +264,21 @@ turn it on (keywords like "quantized int8" / "distilled", or `PlannerOutput.quan
 `PipelineResult` carries `compression` (the gate report: baseline/compressed
 accuracy, floor, `passed`, sizes, `reason`) and `compressed_onnx_path` (set
 only when the gate passed).
+
+The dynamic scope is backed by a held-out Beans validation experiment
+(133 images, identical ONNX Runtime evaluator). The FP32 MobileNetV3 student
+scored `0.9624060150375939`. Default QInt8, which converted all convolution
+nodes, scored `0.3458646616541353`; MatMul/Gemm-only QInt8 scored
+`0.9624060150375939`. Per-channel QInt8 scored `0.3458646616541353`, and
+QUInt8 scored `0.3308270676691729`; neither repaired blanket Conv
+quantization. The FP32 ONNX file was `6093490` bytes and the scoped artifact
+was `4328139` bytes.
+
+This default artifact is hybrid FP32/INT8, not a full-INT8 claim. These Beans
+results are ONNX Runtime accuracy-and-size evidence only; they are not a
+TensorRT result or proof of TensorRT behavior. The same-runtime accuracy gate
+still evaluates every candidate and remains the final shipping decision in
+both quantization modes; the dynamic scope never bypasses or weakens it.
 
 ```bash
 .venv/bin/python -m prompt2model.cli run \

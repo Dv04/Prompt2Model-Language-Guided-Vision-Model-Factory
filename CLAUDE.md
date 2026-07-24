@@ -53,7 +53,7 @@ can still see the machine's torch build).
 
 ## Current state + next steps
 
-Week-4+ integrated prototype: 22 test files / 110 tests, all tracks
+Week-4+ integrated prototype: 23 test files / 119 tests, all tracks
 (Dev/Venkata/Madhuvani + B1 factory-compiler) landed. Proof run recorded in
 PR #4's description; PR #4 is open on this repo (not yet merged to main).
 Classification path is fully validated end-to-end (prompt → config →

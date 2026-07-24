@@ -22,11 +22,11 @@ from prompt2model.config import CompressionConfig, ModelConstraints, TrainingCon
 
 def _tiny_net(num_classes: int = 2) -> nn.Module:
     return nn.Sequential(
-        nn.Conv2d(3, 4, kernel_size=3, padding=1),
+        nn.Conv2d(3, 3, kernel_size=3, padding=1, groups=3),
         nn.ReLU(),
         nn.AdaptiveAvgPool2d(1),
         nn.Flatten(),
-        nn.Linear(4, num_classes),
+        nn.Linear(3, num_classes),
     )
 
 
@@ -74,6 +74,16 @@ def test_quantize_dynamic_and_evaluate(tmp_path):
     onnx_path = _export_tiny_onnx(tmp_path / "model.onnx")
     out = quantize_onnx(onnx_path, tmp_path / "model_int8.onnx", mode="dynamic")
     assert out.exists() and out.stat().st_size > 0
+    import onnx
+
+    graph = onnx.load(str(out)).graph
+    op_types = [node.op_type for node in graph.node]
+    conv = next(node for node in graph.node if node.op_type == "Conv")
+    group = next(attr.i for attr in conv.attribute if attr.name == "group")
+    assert group == 3  # explicit depthwise-Conv regression coverage
+    assert "Conv" in op_types
+    assert "ConvInteger" not in op_types
+    assert "MatMulInteger" in op_types
     accuracy = evaluate_onnx_classification(out, _loader())
     assert 0.0 <= accuracy <= 1.0
 

@@ -12,8 +12,9 @@ Pieces:
   classification path: soft-target KL (temperature-scaled) + hard-label CE.
   Teacher is trained (or loaded) from the registry's accuracy tier.
 * :func:`quantize_onnx` - INT8 post-training quantization of an exported
-  ONNX file via onnxruntime.quantization (dynamic = weights-only, works
-  anywhere; static = activation calibration from the validation loader).
+  ONNX file via onnxruntime.quantization (dynamic = MatMul/Gemm weights,
+  while convolution stays FP32; static = activation calibration from the
+  validation loader).
 * :func:`evaluate_onnx_classification` - accuracy of an ONNX file over a
   torch DataLoader, run through ONNX Runtime (the honest, same-runtime gate).
 * :func:`decide_gate` / :func:`apply_compression` - the floor decision and
@@ -168,15 +169,25 @@ def quantize_onnx(
 ) -> Path:
     """INT8-quantize an exported ONNX file.
 
-    ``dynamic`` quantizes weights only (no calibration data needed, runs on
-    any host). ``static`` additionally calibrates activations from
-    ``calibration_loader`` (a torch DataLoader yielding (images, targets)).
+    ``dynamic`` quantizes MatMul/Gemm weights only (no calibration data
+    needed, runs on any host). Convolution remains FP32 deliberately:
+    ONNX Runtime's default dynamic pass also rewrites Conv/depthwise-Conv to
+    ConvInteger and collapsed a real MobileNetV3 Beans model from 96.24% to
+    34.59% validation accuracy. Restricting the pass to MatMul/Gemm retained
+    96.24% while reducing the artifact by 29%. ``static`` additionally
+    calibrates weights and activations from ``calibration_loader`` (a torch
+    DataLoader yielding (images, targets)); the same accuracy gate applies.
     """
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
     onnx_path, output_path = Path(onnx_path), Path(output_path)
     if mode == "dynamic":
-        quantize_dynamic(str(onnx_path), str(output_path), weight_type=QuantType.QInt8)
+        quantize_dynamic(
+            str(onnx_path),
+            str(output_path),
+            weight_type=QuantType.QInt8,
+            op_types_to_quantize=["MatMul", "Gemm"],
+        )
         return output_path
     if mode != "static":
         raise ValueError(f"unknown quantization mode: {mode}")

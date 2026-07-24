@@ -4,7 +4,7 @@ name: CI
 # The suite is CPU-only: all model tests use synthetic/toy data, the LLM
 # planner tests use fake transports (no network), and any test that needs
 # a pre-built ONNX smoke artifact skips itself when that artifact is
-# missing. Confirmed locally: 118 passed in about 6m 25s on CPU.
+# missing. Confirmed locally: 119 passed in 83.63s on CPU.
 
 on:
   push:
