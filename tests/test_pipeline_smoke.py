@@ -19,6 +19,10 @@ def test_classification_pipeline_runs_end_to_end(tmp_path: Path) -> None:
     assert result.metrics["accuracy"] >= 0.0
     assert result.onnx_path is not None
     assert result.onnx_verification is not None
+    assert result.proof_bundle_path is not None
+    assert Path(result.proof_bundle_path).exists()
+    assert result.release_accepted is False
+    assert "independent_evaluation" in (result.release_refusal_reasons or [])
 
     # Legacy key still present
     assert "labels" in result.onnx_verification["metadata"]
@@ -27,4 +31,3 @@ def test_classification_pipeline_runs_end_to_end(tmp_path: Path) -> None:
     new_keys = {"class_dict", "mean", "std", "input_resolution", "label_map"}
     missing = new_keys - result.onnx_verification["metadata"].keys()
     assert not missing, f"ONNX metadata missing keys: {missing}"
-

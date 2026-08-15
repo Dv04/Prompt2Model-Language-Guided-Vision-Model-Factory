@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -129,6 +130,9 @@ class TrainingConfig(BaseModel):
     pretrained: bool = False
     device: str | None = None
     max_steps_per_epoch: int | None = 10
+    lr_schedule: Literal["cosine", "constant"] = "cosine"
+    warmup_epochs: int = Field(default=1, ge=0)
+    min_learning_rate_ratio: float = Field(default=0.05, ge=0.0, le=1.0)
 
 
 class ExportConfig(BaseModel):
@@ -192,4 +196,3 @@ class PipelineConfig(BaseModel):
     model_name: str | None = None
     augmentation_tags: list[str] = Field(default_factory=list)
     resolved_labels: list[ResolvedLabel] = Field(default_factory=list)
-

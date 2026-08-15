@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +43,62 @@ def _to_device(value: Any, device: torch.device) -> Any:
     return value
 
 
+def learning_rate_at_step(
+    config: TrainingConfig,
+    *,
+    step: int,
+    total_steps: int,
+    steps_per_epoch: int,
+) -> float:
+    """Warmup plus cosine learning rate used by native PyTorch trainers.
+
+    ``step`` is zero-based and the final scheduled step reaches the configured
+    minimum ratio. Constant mode remains an explicit reproducibility option.
+    """
+    if total_steps < 1 or steps_per_epoch < 1:
+        raise ValueError("total_steps and steps_per_epoch must be positive")
+    if step < 0:
+        raise ValueError("step must be non-negative")
+    base = float(config.learning_rate)
+    if config.lr_schedule == "constant":
+        return base
+    bounded_step = min(step, total_steps - 1)
+    warmup_steps = min(config.warmup_epochs * steps_per_epoch, total_steps)
+    if warmup_steps and bounded_step < warmup_steps:
+        return base * ((bounded_step + 1) / warmup_steps)
+    decay_steps = total_steps - warmup_steps
+    if decay_steps <= 1:
+        progress = 1.0
+    else:
+        progress = (bounded_step - warmup_steps) / (decay_steps - 1)
+    cosine = 0.5 * (1.0 + math.cos(math.pi * min(max(progress, 0.0), 1.0)))
+    ratio = config.min_learning_rate_ratio + (
+        1.0 - config.min_learning_rate_ratio
+    ) * cosine
+    return base * ratio
+
+
+def _training_steps(loader: Any, config: TrainingConfig) -> int:
+    try:
+        available = len(loader)
+    except (TypeError, AttributeError):
+        if config.max_steps_per_epoch is None:
+            raise ValueError(
+                "max_steps_per_epoch is required when the training loader has no length"
+            )
+        available = config.max_steps_per_epoch
+    if config.max_steps_per_epoch is not None:
+        available = min(available, config.max_steps_per_epoch)
+    if available < 1:
+        raise ValueError("training loader must contain at least one batch")
+    return int(available)
+
+
+def _set_learning_rate(optimizer: torch.optim.Optimizer, value: float) -> None:
+    for group in optimizer.param_groups:
+        group["lr"] = value
+
+
 def train_classification_model(
     model: nn.Module,
     train_loader: Any,
@@ -64,6 +121,9 @@ def train_classification_model(
     history: list[dict[str, float]] = []
     best_metric = float("-inf")
     best_state = copy.deepcopy(model.state_dict())
+    steps_per_epoch = _training_steps(train_loader, config)
+    total_steps = max(1, config.epochs * steps_per_epoch)
+    global_step = 0
 
     start_time = time.perf_counter()
     for epoch in range(config.epochs):
@@ -80,7 +140,15 @@ def train_classification_model(
             logits = model(images)
             loss = criterion(logits, labels)
             loss.backward()
+            current_lr = learning_rate_at_step(
+                config,
+                step=global_step,
+                total_steps=total_steps,
+                steps_per_epoch=steps_per_epoch,
+            )
+            _set_learning_rate(optimizer, current_lr)
             optimizer.step()
+            global_step += 1
 
             train_loss += float(loss.item())
             predictions = logits.argmax(dim=1)
@@ -117,6 +185,7 @@ def train_classification_model(
                 "train_accuracy": train_accuracy,
                 "val_loss": val_loss / max(val_steps, 1),
                 "val_accuracy": val_accuracy,
+                "learning_rate": current_lr,
             }
         )
         if val_accuracy >= best_metric:
@@ -166,6 +235,9 @@ def train_detection_model(
     history: list[dict[str, float]] = []
     best_metric = float("inf")
     best_state = copy.deepcopy(model.state_dict())
+    steps_per_epoch = _training_steps(train_loader, config)
+    total_steps = max(1, config.epochs * steps_per_epoch)
+    global_step = 0
 
     start_time = time.perf_counter()
     for epoch in range(config.epochs):
@@ -179,7 +251,15 @@ def train_detection_model(
             losses = model(images, targets)
             loss = sum(losses.values())
             loss.backward()
+            current_lr = learning_rate_at_step(
+                config,
+                step=global_step,
+                total_steps=total_steps,
+                steps_per_epoch=steps_per_epoch,
+            )
+            _set_learning_rate(optimizer, current_lr)
             optimizer.step()
+            global_step += 1
             train_loss += float(loss.item())
             steps += 1
             if config.max_steps_per_epoch and steps >= config.max_steps_per_epoch:
@@ -204,6 +284,7 @@ def train_detection_model(
                 "epoch": float(epoch + 1),
                 "train_loss": train_loss / max(steps, 1),
                 "val_loss": mean_val_loss,
+                "learning_rate": current_lr,
             }
         )
         if mean_val_loss <= best_metric:
@@ -317,6 +398,8 @@ def train_yolo_model(
         epochs=training_config.epochs,
         batch=training_config.batch_size,
         lr0=training_config.learning_rate,
+        cos_lr=training_config.lr_schedule == "cosine",
+        warmup_epochs=training_config.warmup_epochs,
         weight_decay=training_config.weight_decay,
         imgsz=dataset_config.image_size,
         project=str(output_dir),

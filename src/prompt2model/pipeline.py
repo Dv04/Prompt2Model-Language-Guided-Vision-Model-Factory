@@ -54,6 +54,9 @@ class PipelineResult:
     # B1 deployment stage: which runtime the final artifact targets, whether
     # it was built locally, and the build recipe when it wasn't.
     deployment: dict[str, Any] | None = None
+    proof_bundle_path: str | None = None
+    release_accepted: bool = False
+    release_refusal_reasons: list[str] | None = None
 
     @property
     def hpo_results(self) -> Any:
@@ -91,6 +94,12 @@ class Prompt2ModelFactory:
         return config
 
     def run(self, config: PipelineConfig, enable_hpo: bool = False) -> PipelineResult:
+        # Resolve the target before creating a run directory, training, or
+        # exporting anything. Unknown hardware must refuse with no side effect;
+        # silently falling back to ORT would fabricate compatibility.
+        from prompt2model.targets import resolve_target
+
+        deployment_target = resolve_target(config.data_context.deployment_target)
         run_dir = Path(config.export.output_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
         config_path = run_dir / "pipeline_config.json"
@@ -398,11 +407,10 @@ class Prompt2ModelFactory:
         # a reproducible build recipe to run on the device.
         deployment_info: dict[str, Any] | None = None
         if onnx_path:
-            from prompt2model.targets import resolve_target
-
             final_artifact = compressed_onnx_path or onnx_path
-            target = resolve_target(config.data_context.deployment_target)
-            deployment_info = target.prepare(final_artifact, run_dir, metadata).to_dict()
+            deployment_info = deployment_target.prepare(
+                final_artifact, run_dir, metadata
+            ).to_dict()
             metrics["deployment"] = deployment_info
 
         report_path = write_markdown_report(
@@ -414,6 +422,27 @@ class Prompt2ModelFactory:
             hpo_results=hpo_info,
             telemetry=telemetry,
         )
+
+        # The compilation object is a fail-closed evidence bundle. Current
+        # runs do not invent independent evaluation, rights, hardware, or
+        # selective-risk evidence; those gates remain false until supplied by
+        # their dedicated evaluators.
+        from prompt2model.proof_bundle import build_proof_bundle
+
+        proof_bundle_path = build_proof_bundle(
+            run_dir=run_dir,
+            artifacts={
+                "config": config_path,
+                "checkpoint": training.checkpoint_path,
+                "evaluation_report": report_path,
+                "onnx": onnx_path,
+                "compressed_onnx": compressed_onnx_path,
+            },
+            target=deployment_info,
+        )
+        proof_payload = json.loads(proof_bundle_path.read_text(encoding="utf-8"))
+        release_accepted = bool(proof_payload["release"]["accepted"])
+        release_refusal_reasons = list(proof_payload["release"]["refused_reasons"])
         
         # Log telemetry
         self.telemetry.log_run(config, metrics, run_dir)
@@ -431,6 +460,9 @@ class Prompt2ModelFactory:
             compression=compression_info,
             compressed_onnx_path=compressed_onnx_path,
             deployment=deployment_info,
+            proof_bundle_path=str(proof_bundle_path),
+            release_accepted=release_accepted,
+            release_refusal_reasons=release_refusal_reasons,
         )
 
 
