@@ -7,10 +7,12 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
+import pytest
 
 from prompt2model.targets import (
     OnnxRuntimeTarget,
     TensorRTTarget,
+    UnknownTargetError,
     resolve_target,
 )
 
@@ -28,8 +30,30 @@ def test_resolve_aliases():
     assert resolve_target("jetson").name == "tensorrt"
     assert resolve_target("TRT").name == "tensorrt"
     assert resolve_target("orin").name == "tensorrt"
-    # Unknown targets never error - universal fallback.
-    assert resolve_target("quantum-npu-9000").name == "onnxruntime"
+    with pytest.raises(UnknownTargetError, match="quantum-npu-9000"):
+        resolve_target("quantum-npu-9000")
+    with pytest.raises(UnknownTargetError, match="unsupported deployment target"):
+        resolve_target(" ")
+
+
+def test_unknown_target_refuses_before_pipeline_side_effect(tmp_path):
+    from prompt2model.config import PipelineConfig
+    from prompt2model.pipeline import Prompt2ModelFactory
+
+    output = tmp_path / "must_not_exist"
+    config = PipelineConfig.model_validate(
+        {
+            "prompt": "classify widgets",
+            "task": "classification",
+            "labels": [{"name": "widget"}],
+            "dataset": {"root": str(tmp_path)},
+            "data_context": {"deployment_target": "quantum-npu-9000"},
+            "export": {"output_dir": str(output)},
+        }
+    )
+    with pytest.raises(UnknownTargetError):
+        Prompt2ModelFactory().run(config)
+    assert not output.exists()
 
 
 def test_onnxruntime_target_builds(tmp_path):
@@ -54,7 +78,8 @@ def test_tensorrt_target_emits_recipe_without_trtexec(tmp_path, monkeypatch):
     artifact = TensorRTTarget().prepare(onnx_path, tmp_path, {})
     assert artifact.built is False
     assert artifact.runtime == "tensorrt"
-    assert artifact.artifact_path == str(onnx_path)  # deployable fallback = the ONNX
+    assert artifact.artifact_path is None
+    assert artifact.source_artifact_path == str(onnx_path)
     recipe = Path(artifact.recipe_path)
     assert recipe.exists()
     content = recipe.read_text()
@@ -106,4 +131,6 @@ def test_end_to_end_run_with_tensorrt_target(tmp_path, monkeypatch):
     assert result.deployment is not None
     assert result.deployment["runtime"] == "tensorrt"
     assert result.deployment["built"] is False
+    assert result.deployment["artifact_path"] is None
+    assert result.deployment["source_artifact_path"].endswith("model.onnx")
     assert Path(result.deployment["recipe_path"]).exists()

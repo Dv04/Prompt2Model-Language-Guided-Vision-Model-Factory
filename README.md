@@ -326,12 +326,13 @@ backends (TensorRT first) are one registry entry each.
   target device** instead - TensorRT engines are tied to a specific GPU +
   TensorRT version, so building on-device is the normal path, not a fallback
   of last resort.
-- Unknown target names fall back to `onnxruntime` (with a warning log), never
-  an error - the factory always produces something deployable.
+- Unknown target names refuse before creating a run directory or training;
+  target compatibility is never inferred from an ONNX Runtime fallback.
 
 `PipelineResult.deployment` carries the target name, runtime, artifact path,
-`built` flag, and `recipe_path` when a build script was emitted instead of a
-local build.
+`built` flag, source-artifact path, and `recipe_path` when a build script was
+emitted instead of a target-deployable artifact. When `built` is false,
+`artifact_path` is `null`.
 
 ## Calibration + abstain
 

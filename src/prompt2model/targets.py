@@ -21,14 +21,19 @@ from typing import Any
 logger = logging.getLogger("prompt2model.targets")
 
 
+class UnknownTargetError(ValueError):
+    """Raised before a run mutates state for an unsupported deployment target."""
+
+
 @dataclass
 class TargetArtifact:
     target: str            # registry name, e.g. "onnxruntime" | "tensorrt"
     runtime: str           # runtime the artifact runs in
-    artifact_path: str     # the file to deploy
+    artifact_path: str | None  # deployable target artifact; None until built
     built: bool            # True when the deployable artifact exists locally
     recipe_path: str | None = None  # build script for on-device compilation
     notes: str = ""
+    source_artifact_path: str | None = None  # compiler input, never implied deployable
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -38,6 +43,7 @@ class TargetArtifact:
             "built": self.built,
             "recipe_path": self.recipe_path,
             "notes": self.notes,
+            "source_artifact_path": self.source_artifact_path,
         }
 
 
@@ -68,14 +74,16 @@ class OnnxRuntimeTarget(ExportTarget):
                 artifact_path=str(onnx_path),
                 built=True,
                 notes="runs anywhere ONNX Runtime runs (CPU/GPU/NPU EPs)",
+                source_artifact_path=str(onnx_path),
             )
         except Exception as exc:  # noqa: BLE001 - never raise into the pipeline
             return TargetArtifact(
                 target=self.name,
                 runtime="onnxruntime",
-                artifact_path=str(onnx_path),
+                artifact_path=None,
                 built=False,
                 notes=f"ONNX Runtime failed to load the artifact: {exc}",
+                source_artifact_path=str(onnx_path),
             )
 
 
@@ -141,10 +149,11 @@ class TensorRTTarget(ExportTarget):
             return TargetArtifact(
                 target=self.name,
                 runtime="tensorrt",
-                artifact_path=str(onnx_path),
+                artifact_path=None,
                 built=False,
                 recipe_path=str(recipe_path),
                 notes="trtexec not found on this host - run build_tensorrt.sh on the target device",
+                source_artifact_path=str(onnx_path),
             )
 
         try:
@@ -162,24 +171,27 @@ class TensorRTTarget(ExportTarget):
                     built=True,
                     recipe_path=str(recipe_path),
                     notes="engine built locally; valid only for this GPU + TensorRT version",
+                    source_artifact_path=str(onnx_path),
                 )
             tail = completed.stderr.decode("utf-8", errors="replace")[-400:]
             return TargetArtifact(
                 target=self.name,
                 runtime="tensorrt",
-                artifact_path=str(onnx_path),
+                artifact_path=None,
                 built=False,
                 recipe_path=str(recipe_path),
                 notes=f"trtexec failed (rc={completed.returncode}): {tail}",
+                source_artifact_path=str(onnx_path),
             )
         except Exception as exc:  # noqa: BLE001
             return TargetArtifact(
                 target=self.name,
                 runtime="tensorrt",
-                artifact_path=str(onnx_path),
+                artifact_path=None,
                 built=False,
                 recipe_path=str(recipe_path),
                 notes=f"trtexec invocation error: {exc}",
+                source_artifact_path=str(onnx_path),
             )
 
 
@@ -209,12 +221,17 @@ register_target("tensorrt", TensorRTTarget())
 
 
 def resolve_target(name: str | None) -> ExportTarget:
-    """Deployment-target string → backend. Unknown names get the universal
-    ONNX Runtime target (with a log line), never an error - the factory
-    always produces something deployable."""
-    key = (name or "onnxruntime").strip().lower()
+    """Resolve an explicitly supported target or refuse before compilation.
+
+    Falling back from an unknown accelerator to ONNX Runtime would falsely
+    imply target compatibility, so unsupported and blank names are errors.
+    ``None`` remains the deliberate default ONNX Runtime target.
+    """
+    key = "onnxruntime" if name is None else name.strip().lower()
     canonical = _ALIASES.get(key)
     if canonical is None:
-        logger.warning("unknown deployment target %r - using onnxruntime", name)
-        canonical = "onnxruntime"
+        supported = ", ".join(sorted(_ALIASES))
+        raise UnknownTargetError(
+            f"unsupported deployment target {name!r}; supported targets: {supported}"
+        )
     return _TARGETS[canonical]
