@@ -50,12 +50,35 @@ def _export_tiny_onnx(path: Path) -> Path:
 # ── gate math (pure) ─────────────────────────────────────────────────────────
 
 
-def test_floor_is_stricter_of_relative_and_absolute():
-    compression = CompressionConfig(accuracy_floor_relative=0.9)
-    # Relative floor: 0.9 * 0.8 = 0.72; absolute floor 0.75 is stricter.
-    assert compute_floor(0.8, compression, ModelConstraints(accuracy_floor=0.75)) == 0.75
-    # No absolute floor → relative governs.
-    assert compute_floor(0.8, compression, ModelConstraints()) == pytest.approx(0.72)
+def test_user_floor_below_default_is_honored():
+    # Issue #14: a stated lenient floor must not be silently raised to the
+    # 0.98 retention default (the old max() code returned 0.8036 here).
+    compression = CompressionConfig()  # accuracy_floor_relative = 0.98
+    constraints = ModelConstraints(accuracy_floor=0.60)
+    assert compute_floor(0.82, compression, constraints) == 0.60
+    # The real Beans int8 case: 60.2 percent accuracy vs a stated 0.60 floor
+    # must pass the gate.
+    passed, floor = decide_gate(0.82, 0.602, compression, constraints)
+    assert passed and floor == 0.60
+
+
+def test_user_floor_above_retention_default_is_honored():
+    # A stricter explicit floor also binds as stated.
+    compression = CompressionConfig()  # accuracy_floor_relative = 0.98
+    constraints = ModelConstraints(accuracy_floor=0.99)
+    assert compute_floor(0.80, compression, constraints) == 0.99
+    # 0.85 clears the 0.98 * 0.80 = 0.784 retention default but not the
+    # user's stated 0.99 floor, so the gate refuses.
+    passed, floor = decide_gate(0.80, 0.85, compression, constraints)
+    assert not passed and floor == 0.99
+
+
+def test_retention_default_applies_when_no_user_floor():
+    constraints = ModelConstraints()  # accuracy_floor is None
+    assert compute_floor(0.8, CompressionConfig(), constraints) == pytest.approx(0.98 * 0.8)
+    assert compute_floor(
+        0.8, CompressionConfig(accuracy_floor_relative=0.9), constraints
+    ) == pytest.approx(0.72)
 
 
 def test_gate_pass_and_refuse():

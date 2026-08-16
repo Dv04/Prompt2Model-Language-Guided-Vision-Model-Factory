@@ -150,10 +150,11 @@ class CompressionConfig(BaseModel):
     distillation_teacher: str | None = None
     distillation_temperature: float = 4.0
     distillation_alpha: float = 0.7  # weight of the soft (teacher) loss
-    # The compressed artifact must retain at least this fraction of the
-    # uncompressed model's validation accuracy - else the factory REFUSES to
-    # ship it and keeps the uncompressed artifact. An absolute floor can
-    # additionally come from ModelConstraints.accuracy_floor.
+    # Default retention floor: the compressed artifact must retain at least
+    # this fraction of the uncompressed model's validation accuracy - else
+    # the factory REFUSES to ship it and keeps the uncompressed artifact.
+    # Applies only when ModelConstraints.accuracy_floor is not set; an
+    # explicitly stated user floor supersedes this default.
     accuracy_floor_relative: float = 0.98
 
     @field_validator("quantization_mode")

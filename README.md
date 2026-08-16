@@ -260,8 +260,10 @@ turn it on (keywords like "quantized int8" / "distilled", or `PlannerOutput.quan
   scope (`CompressionConfig.quantization_mode`).
 - **The gate** (`decide_gate` / `apply_compression`): the compressed artifact
   is evaluated in ONNX Runtime - the SAME runtime it ships in - and compared
-  against `max(accuracy_floor_relative * baseline_accuracy, constraints.accuracy_floor)`
-  (default relative floor `0.98`, i.e. at most a 2% accuracy hit). If it
+  against the user's stated absolute accuracy floor when one was given (the
+  prompt or planner `accuracy_floor` is the contract), otherwise against
+  `accuracy_floor_relative * baseline_accuracy` (default `0.98`, i.e. at most
+  a 2% accuracy hit). If it
   can't hold that floor, **the factory refuses to ship the compressed
   artifact and keeps the uncompressed one** - this refusal is the safety
   contract, not a bug to work around.
