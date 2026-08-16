@@ -12,8 +12,9 @@ Pieces:
   classification path: soft-target KL (temperature-scaled) + hard-label CE.
   Teacher is trained (or loaded) from the registry's accuracy tier.
 * :func:`quantize_onnx` - INT8 post-training quantization of an exported
-  ONNX file via onnxruntime.quantization (dynamic = weights-only, works
-  anywhere; static = activation calibration from the validation loader).
+  ONNX file via onnxruntime.quantization (dynamic = MatMul/Gemm weights,
+  while convolution stays FP32; static = activation calibration from the
+  validation loader).
 * :func:`evaluate_onnx_classification` - accuracy of an ONNX file over a
   torch DataLoader, run through ONNX Runtime (the honest, same-runtime gate).
 * :func:`decide_gate` / :func:`apply_compression` - the floor decision and
@@ -55,6 +56,7 @@ def train_distilled_classification(
     """
     import torch
     import torch.nn.functional as F
+    from torch.optim.swa_utils import update_bn
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -101,6 +103,28 @@ def train_distilled_classification(
             epoch_loss += float(loss.item())
             steps += 1
 
+        # BatchNorm running_mean/running_var are updated only as a
+        # gradient-free exponential moving average during .train()-mode
+        # forward passes; they are a SEPARATE mechanism from the
+        # backprop/optimizer step above. With small batches, few epochs, or
+        # a from-scratch (non-pretrained) backbone, that moving average
+        # never converges to the real activation statistics, so .eval()
+        # (below - and every downstream evaluator: the ONNX export, the
+        # accuracy-floor gate, the deployed EdgeModel) can silently collapse
+        # to an input-independent constant output EVEN THOUGH the
+        # .train()-mode loss keeps falling normally each step, since the
+        # loss computation above never touches the stale running stats.
+        # This is the exact "chance-level despite falling train_loss" bug:
+        # this repo already diagnosed and patched one instance of it for the
+        # CLI smoke-test path (commit ba62c2f - "backbone collapses to an
+        # input-independent constant output"), but train_distilled_classification
+        # inherited the same vulnerability since it was never defended here.
+        # update_bn() recomputes fresh running statistics from a genuine
+        # data pass (temporarily forcing cumulative-average momentum) using
+        # the CURRENT weights, independent of how many training epochs ran
+        # or whether the backbone started pretrained.
+        update_bn(val_loader, student, device=device)
+
         student.eval()
         correct, total = 0, 0
         with torch.no_grad():
@@ -145,15 +169,25 @@ def quantize_onnx(
 ) -> Path:
     """INT8-quantize an exported ONNX file.
 
-    ``dynamic`` quantizes weights only (no calibration data needed, runs on
-    any host). ``static`` additionally calibrates activations from
-    ``calibration_loader`` (a torch DataLoader yielding (images, targets)).
+    ``dynamic`` quantizes MatMul/Gemm weights only (no calibration data
+    needed, runs on any host). Convolution remains FP32 deliberately:
+    ONNX Runtime's default dynamic pass also rewrites Conv/depthwise-Conv to
+    ConvInteger and collapsed a real MobileNetV3 Beans model from 96.24% to
+    34.59% validation accuracy. Restricting the pass to MatMul/Gemm retained
+    96.24% while reducing the artifact by 29%. ``static`` additionally
+    calibrates weights and activations from ``calibration_loader`` (a torch
+    DataLoader yielding (images, targets)); the same accuracy gate applies.
     """
     from onnxruntime.quantization import QuantType, quantize_dynamic
 
     onnx_path, output_path = Path(onnx_path), Path(output_path)
     if mode == "dynamic":
-        quantize_dynamic(str(onnx_path), str(output_path), weight_type=QuantType.QInt8)
+        quantize_dynamic(
+            str(onnx_path),
+            str(output_path),
+            weight_type=QuantType.QInt8,
+            op_types_to_quantize=["MatMul", "Gemm"],
+        )
         return output_path
     if mode != "static":
         raise ValueError(f"unknown quantization mode: {mode}")
